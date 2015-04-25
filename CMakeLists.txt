@@ -1,14 +1,26 @@
 cmake_minimum_required(VERSION 2.8.10)
-project(BCV-DSPLIB C CXX)
+project(rPPG C CXX)
 
-set(BCV-DSPLIB_VERSION 0.8)
+set(rPPG_VERSION 0.8)
 
 # Configure the warning and code coverage suppression file
 configure_file(
-  "${BCV-DSPLIB_SOURCE_DIR}/CTestCustom.cmake.in"
-  "${BCV-DSPLIB_BINARY_DIR}/CTestCustom.cmake"
+  "${rPPG_SOURCE_DIR}/CTestCustom.cmake.in"
+  "${rPPG_BINARY_DIR}/CTestCustom.cmake"
   COPYONLY
 )
+
+message("CMAKE_SOURCE_DIR : ${CMAKE_SOURCE_DIR}")
+message("PROJECT_NAME : ${PROJECT_NAME}")
+message("DSP_SOURCE_DIR : ${DSP_SOURCE_DIR}")
+message("DSP_BINARY_DIR : ${DSP_BINARY_DIR}")
+
+# --------------------------------------------------
+# Organize output files.  On Windows this also keeps .dll files next
+# to the .exe files that need them, making tests easy to run.
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${rPPG_BINARY_DIR}/bin)
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${rPPG_BINARY_DIR}/lib)
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${rPPG_BINARY_DIR}/lib)
 
 #equivalent to "make VERBOSE=1"
 set(CMAKE_VERBOSE_MAKEFILE "ON")
@@ -61,7 +73,7 @@ if(PROFILE)
 endif(PROFILE)
 
 # Add the CMake directory for custon CMake modules
-set(CMAKE_MODULE_PATH "${BCV-DSPLIB_SOURCE_DIR}/CMAKE" ${CMAKE_MODULE_PATH})
+set(CMAKE_MODULE_PATH "${rPPG_SOURCE_DIR}/CMAKE" ${CMAKE_MODULE_PATH})
 #PIE depends on android api level???
 #LAPACKE to skip default complex.h whichis not found in NDK :
 #-DHAVE_LAPACK_CONFIG_H  -DLAPACK_COMPLEX_STRUCTURE
@@ -100,6 +112,44 @@ if (UNIX)
    STRING(REPLACE \;mtsk\; \; CMAKE_Fortran_IMPLICIT_LINK_LIBRARIES "${CMAKE_Fortran_IMPLICIT_LINK_LIBRARIES}")
 endif ()
 endif(ANDROID_NDK)
+
+# --------------------------------------------------
+set(V4L2_LIB_DIR $ENV{V4L2_LIB_DIR})
+find_path(V4L2_INC capture-v4l2.h
+			HINTS ${V4L2_LIB_DIR} )
+message("INC:${V4L2_INC}" )
+include_directories("${V4L2_INC}")
+
+#finding libv4l2.a
+find_library (V4L2-LIB
+    NAMES v4l2
+    PATHS ${V4L2_LIB_DIR}/build/lib
+    PATH_SUFFIXES lib
+    NO_DEFAULT_PATH)
+message("V4L2-LIB=${V4L2-LIB} ")
+# --------------------------------------------------
+#opencv should be built first!
+set(OpenCV_DIR $ENV{OPENCV_OUT})
+message("++++OpenCV_DIR:${OpenCV_DIR}")
+FIND_PACKAGE( OpenCV REQUIRED)
+if(OpenCV_FOUND)
+	message("found")
+	message( "OpenCV_INCLUDE_DIRS:${OpenCV_INCLUDE_DIRS}" )
+	message( "OpenCV_INCLUDES:${OpenCV_INCLUDES}")
+	message( "OpenCV_LIBRARIES:${OpenCV_LIBRARIES}")
+	message( "OpenCV_LIBS:${OpenCV_LIBS}")
+	message( "OpenCV_DEFINITIONS:${OpenCV_DEFINITIONS}")
+else()
+	message(FATAL_ERROR "openCV not foud")
+endif()
+
+#openMP to avoid link error : omp_xxx error!
+# undefined reference to `GOMP_loop_dynamic_start
+find_package(OpenMP)
+if(OPENMP_FOUND)
+	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+endif()
 
 # --------------------------------------------------
 # Make a target to generate the documentation.  If Doxygen isn't installed, then
@@ -144,11 +194,11 @@ find_package (Threads REQUIRED)
 #if (Threads_FOUND)
 #endif (Threads_FOUND)
 # --------------------------------------------------
-set(BCV-DSPLIB_INSTALL_EXPORT_NAME dsplib-targets)
+set(rPPG_INSTALL_EXPORT_NAME dsplib-targets)
 
 macro(dsplib_install_library lib)
   install(TARGETS ${lib}
-    EXPORT ${BCV-DSPLIB_INSTALL_EXPORT_NAME}
+    EXPORT ${rPPG_INSTALL_EXPORT_NAME}
     ARCHIVE DESTINATION lib${LIB_SUFFIX}
     LIBRARY DESTINATION lib${LIB_SUFFIX}
     RUNTIME DESTINATION bin
@@ -161,13 +211,6 @@ endmacro()
 enable_testing()
 include(CTest)
 enable_testing()
-# --------------------------------------------------
-
-# Organize output files.  On Windows this also keeps .dll files next
-# to the .exe files that need them, making tests easy to run.
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${BCV-DSPLIB_BINARY_DIR}/bin)
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${BCV-DSPLIB_BINARY_DIR}/lib)
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${BCV-DSPLIB_BINARY_DIR}/lib)
 # --------------------------------------------------
 # Check for any necessary platform specific compiler flags
 include( CheckDSPLIBCompilerFlags )
@@ -349,38 +392,9 @@ set( CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY )
 set( CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY )
 endif(ANDROID_NDK)
 # --------------------------------------------------
-# CPACK Packaging
-
-#SET(CPACK_PACKAGE_NAME "DSPLIB")
-#SET(CPACK_PACKAGE_VENDOR "University of Tennessee, Univ. of California Berkeley, Univ. of Colorado Denver and NAG Ltd")
-#SET(CPACK_PACKAGE_DESCRIPTION_SUMMARY "DSPLIB- Linear Algebra Package")
-#set(CPACK_PACKAGE_VERSION_MAJOR 3)
-#set(CPACK_PACKAGE_VERSION_MINOR 5)
-#set(CPACK_PACKAGE_VERSION_PATCH 0)
-#set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
-#SET(CPACK_PACKAGE_INSTALL_DIRECTORY "DSPLIB")
-#IF(WIN32 AND NOT UNIX)
-## There is a bug in NSI that does not handle full unix paths properly. Make
-## sure there is at least one set of four (4) backlasshes.
-#SET(CPACK_NSIS_HELP_LINK "http:\\\\\\\\http://icl.cs.utk.edu/dsplib-forum")
-#SET(CPACK_NSIS_URL_INFO_ABOUT "http:\\\\\\\\www.netlib.org/dsplib")
-#SET(CPACK_NSIS_CONTACT "dsplib@eecs.utk.edu")
-#SET(CPACK_NSIS_MODIFY_PATH ON)
-#SET(CPACK_NSIS_DISPLAY_NAME "DSPLIB-${DSPLIB_VERSION}")
-#set(CPACK_PACKAGE_RELOCATABLE "true")
-#ELSE(WIN32 AND NOT UNIX)
-#SET(CPACK_GENERATOR "TGZ")
-#SET(CPACK_SOURCE_GENERATOR TGZ)
-#SET(CPACK_SOURCE_PACKAGE_FILE_NAME "dsplib-${DSPLIB_VERSION}" )
-#SET(CPACK_SOURCE_IGNORE_FILES ~$ .svn ${CPACK_SOURCE_IGNORE_FILES} )
-#ENDIF(WIN32 AND NOT UNIX)
-#INCLUDE(CPack)
-
-
-# --------------------------------------------------
 # By default static library
-OPTION(BUILD_SHARED_LIBS "Build shared libraries" OFF )
-OPTION(BUILD_STATIC_LIBS "Build static libraries" ON )
+#OPTION(BUILD_SHARED_LIBS "Build shared libraries" OFF )
+#OPTION(BUILD_STATIC_LIBS "Build static libraries" ON )
 #OPTION(BUILD_SHARED_LIBS "Build shared libraries" ON )
 
 # --------------------------------------------------
@@ -451,10 +465,9 @@ ADD_LIBRARY(bcv-dsp_static_${MACHINE_ARCH} STATIC
 endif("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
 
 # --------------------------------------------------
-# unit test
 # --------------------------------------------------
-add_executable(mat_test
-  mat_test.c
+add_executable(rPPG-v4l
+  pulse-v4l2.c
 )
 
 #the order is very important for atlas and lapack
@@ -462,170 +475,33 @@ if(1)
 	if("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
 		target_link_libraries(mat_test
 			bcv-dsp_${MACHINE_ARCH}.d
+			${V4L2-LIB}
+			${OpenCV_LIBS}
 		)
 	else("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
 		target_link_libraries(mat_test
 			bcv-dsp_${MACHINE_ARCH}
+			${V4L2-LIB}
+			${OpenCV_LIBS}
 		)
 	endif("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
 else(1)
 	if("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
-		target_link_libraries(mat_test
-			bcv-dsp_static_${MACHINE_ARCH}.d
-			${DSP_DEP_STATICS}
-		)
+	target_link_libraries(rPPG-v4l
+		bcv-dsp_static_${MACHINE_ARCH}.d
+		${DSP_DEP_STATICS}
+		${V4L2-LIB}
+		${OpenCV_LIBS}
+	)
 	else("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
-		target_link_libraries(mat_test
-			bcv-dsp_static_${MACHINE_ARCH}
-			${DSP_DEP_STATICS}
-		)
+	target_link_libraries(rPPG-v4l
+		bcv-dsp_static_${MACHINE_ARCH}
+		${DSP_DEP_STATICS}
+		${V4L2-LIB}
+		${OpenCV_LIBS}
+	)
 	endif("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
 endif(1)
 
-# --------------------------------------------------
-#gcc testblasc.c -o testblasc -I ../include/ -L ../build/lib -lcblas -latlas
-add_executable(cblas_test
-  cblas_test.c
-)
-
-#!!!the linking order of libs are quite important!!!
-if("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
-target_link_libraries(cblas_test
-	bcv-dsp_static_${MACHINE_ARCH}.d
-	${DSP_DEP_STATICS}
-	)
-else("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
-target_link_libraries(cblas_test
-	bcv-dsp_static_${MACHINE_ARCH}
-	${DSP_DEP_STATICS}
-	)
-endif("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
-# --------------------------------------------------
-add_executable(lapacke_test
-  lapacke_test.c
-)
-
-#!!!the linking order of libs are quite important!!!
-if("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
-target_link_libraries(lapacke_test
-	bcv-dsp_static_${MACHINE_ARCH}.d
-	${DSP_DEP_STATICS}
-	)
-else("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
-target_link_libraries(lapacke_test
-	bcv-dsp_static_${MACHINE_ARCH}
-	${DSP_DEP_STATICS}
-	)
-endif("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
-# --------------------------------------------------
-add_executable(lapack_test
-  lapack_test.c
-)
-
-#!!!the linking order of libs are quite important!!!
-if("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
-target_link_libraries(lapack_test
-	bcv-dsp_static_${MACHINE_ARCH}.d
-	${DSP_DEP_STATICS}
-	)
-else("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
-target_link_libraries(lapack_test
-	bcv-dsp_static_${MACHINE_ARCH}
-	${DSP_DEP_STATICS}
-	)
-endif("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
-#install(TARGETS test RUNTIME DESTINATION bin)
-
-# --------------------------------------------------
-add_executable(cq_test
-  cq_test.c
-)
-
 #the order is very important for atlas and lapack
-if("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
-target_link_libraries(cq_test
-	bcv-dsp_static_${MACHINE_ARCH}.d
-	${DSP_DEP_STATICS}
-)
-else("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
-target_link_libraries(cq_test
-	bcv-dsp_static_${MACHINE_ARCH}
-	${DSP_DEP_STATICS}
-)
-endif("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
-
 # --------------------------------------------------
-add_executable(spec_test
-  spec_test.c
-)
-
-if("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
-#the order is very important for atlas and lapack
-target_link_libraries(spec_test
-	bcv-dsp_static_${MACHINE_ARCH}.d
-	${DSP_DEP_STATICS}
-)
-else("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
-target_link_libraries(spec_test
-	bcv-dsp_static_${MACHINE_ARCH}
-	${DSP_DEP_STATICS}
-)
-endif("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
-# --------------------------------------------------
-add_executable(dsp_test
-  dsp_test.c
-)
-
-#the order is very important for atlas and lapack
-if("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
-target_link_libraries(dsp_test
-	bcv-dsp_static_${MACHINE_ARCH}.d
-	${DSP_DEP_STATICS}
-)
-else("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
-target_link_libraries(dsp_test
-	bcv-dsp_static_${MACHINE_ARCH}
-	${DSP_DEP_STATICS}
-)
-endif("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
-# --------------------------------------------------
-
-# Export dsplib targets from the install tree, if any.
-#set(_dsplib_config_install_guard_target "")
-#if(ALL_TARGETS)
-#  install(EXPORT dsplib-targets
-#    DESTINATION lib/cmake/dsplib-${DSPLIB_VERSION})
-
-  # Choose one of the dsplib targets to use as a guard for
-  # dsplib-config.cmake to load targets from the install tree.
-#  list(GET ALL_TARGETS 0 _dsplib_config_install_guard_target)
-#endif()
-
-# Export dsplib targets from the build tree, if any.
-#set(_dsplib_config_build_guard_target "")
-#if(ALL_TARGETS)
-#  export(TARGETS ${ALL_TARGETS} FILE dsplib-targets.cmake)
-
-#  # Choose one of the dsplib targets to use as a guard
-#  # for lapack-config.cmake to load targets from the build tree.
-#  list(GET ALL_TARGETS 0 _dsplib_config_build_guard_target)
-#endif()
-
-configure_file(${BCV-DSPLIB_SOURCE_DIR}/CMAKE/dsplib-config-version.cmake.in
-  ${BCV-DSPLIB_BINARY_DIR}/dsplib-config-version.cmake @ONLY)
-configure_file(${BCV-DSPLIB_SOURCE_DIR}/CMAKE/dsplib-config-build.cmake.in
-  ${BCV-DSPLIB_BINARY_DIR}/dsplib-config.cmake @ONLY)
-
-#configure_file(${CMAKE_CURRENT_SOURCE_DIR}/dsplib.pc.in ${CMAKE_CURRENT_BINARY_DIR}/dsplib.pc)
-#  install(FILES
-#  ${CMAKE_CURRENT_BINARY_DIR}/dsplib.pc
-#  DESTINATION ${PKG_CONFIG_DIR}
-#   )
-
-configure_file(${BCV-DSPLIB_SOURCE_DIR}/CMAKE/dsplib-config-install.cmake.in
-  ${BCV-DSPLIB_BINARY_DIR}/CMakeFiles/dsplib-config.cmake @ONLY)
-install(FILES
-  ${BCV-DSPLIB_BINARY_DIR}/CMakeFiles/dsplib-config.cmake
-  ${BCV-DSPLIB_BINARY_DIR}/dsplib-config-version.cmake
-  DESTINATION lib/cmake/dsplib-${BCV-DSPLIB_VERSION}
-  )

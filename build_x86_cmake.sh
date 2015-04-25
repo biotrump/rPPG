@@ -19,29 +19,7 @@ CYGWIN*)
   *) echo $0: Unknown platform; exit
 esac
 
-arm=${arm:-arm}
-echo arm=$arm
-case arm in
-  arm)
-    TARGPLAT=arm-linux-androideabi
-    ARCHI=arm
-    CONFTARG=arm-eabi
-  ;;
-  x86)
-    TARGPLAT=x86
-    ARCHI=x86
-    CONFTARG=x86
-  ;;
-  mips)
-  ## probably wrong
-    TARGPLAT=mipsel-linux-android
-    ARCHI=mips
-    CONFTARG=mips
-  ;;
-  *) echo $0: Unknown target; exit
-esac
-
-export DSP_HOME=${DSP_HOME:-`pwd`/..}
+#export DSP_HOME=${HOME}/path/to/dsp
 export BLIS_SRC=${DSP_HOME}/blis
 export BLISLIB=${BLISLIB:-${BLIS_SRC}/lib/sandybridge/libblis.a}
 #x86
@@ -61,7 +39,6 @@ export LAPACK_BUILD=${LAPACK_BUILD:-${LAPACK_SRC}/build-x86}
 export LAPACK_LIB=${LAPACK_LIB:-${LAPACK_BUILD}/lib}
 export LAPACKE_SRC=${LAPACKE_SRC:-${LAPACK_SRC}/LAPACKE}
 export CBLAS_SRC=${CBLAS_SRC:-${LAPACK_SRC}/CBLAS}
-#export BUILD_HOME=${BUILD_HOME:-$HOME/build}
 
 if [ ! -d build_x86 ]; then
 mkdir build_x86
