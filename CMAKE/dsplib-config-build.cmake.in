@@ -1,0 +1,10 @@
+# Load dsplib targets from the build tree if necessary.
+set(_DSPLIB_TARGET "@_dsplib_config_build_guard_target@")
+if(_DSPLIB_TARGET AND NOT TARGET "${_DSPLIB_TARGET}")
+  include("@DSPLIB_BINARY_DIR@/dsplib-targets.cmake")
+endif()
+unset(_DSPLIB_TARGET)
+
+# Report the blas and dsplib raw or imported libraries.
+set(DSPLIB_blas_LIBRARIES "@BLAS_LIBRARIES@")
+set(DSPLIB_dsplib_LIBRARIES "@DSPLIB_LIBRARIES@")
