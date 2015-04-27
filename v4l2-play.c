@@ -3,8 +3,11 @@
  *
  *  This program can be used and distributed without restrictions.
  *
- *	This program were got from V4L2 API, Draft 0.20
- *		available at: http://v4l2spec.bytesex.org/
+ *	This v4l2 sample program
+ * 	http://linuxtv.org/downloads/v4l-dvb-apis/capture-example.html
+ *
+ *	V4L2 API, Draft 0.20
+ *	available at: http://v4l2spec.bytesex.org/
  */
 
 #include <stdio.h>
@@ -28,14 +31,14 @@
 #include <opencv2/imgproc/imgproc.hpp>
 #include "dsp-lib.h"
 
-#define FORCED_WIDTH  640
-#define FORCED_HEIGHT 480
+#define DEFAULT_WIDTH  640
+#define DEFAULT_HEIGHT 480
 #define FORCED_FORMAT V4L2_PIX_FMT_YUYV	//V4L2_PIX_FMT_MJPEG
 #define FORCED_FIELD  V4L2_FIELD_ANY
 #define	ROI_BORDERW		(4)
-//#define	ROI_WIDTH		(FORCED_WIDTH>>2)	//(160)
-//#define	ROI_HEIGHT		(FORCED_HEIGHT/3)	//(180)
-//#define ROI_Y_OFFSET	(90)/(480/FORCED_HEIGHT)
+//#define	ROI_WIDTH		(DEFAULT_WIDTH>>2)	//(160)
+//#define	ROI_HEIGHT		(DEFAULT_HEIGHT/3)	//(180)
+//#define ROI_Y_OFFSET	(90)/(480/DEFAULT_HEIGHT)
 
 /*http://forum.processing.org/one/topic/webcam-with-stable-framerate-25fps-on-high-resolution.html
 The stable fps can only occur in the low frame rate. Higher fps>15 may not be stable.
@@ -67,8 +70,8 @@ static int				enableInfraRed=0;
 static char 			*windowname="v4l2 capture";
 static unsigned 		v4l2_pix_fmt=FORCED_FORMAT;
 
-static int 				win_width = FORCED_WIDTH;
-static int 				win_height = FORCED_HEIGHT;
+static int 				win_width = DEFAULT_WIDTH;
+static int 				win_height = DEFAULT_HEIGHT;
 static int				roi_WIDTH;
 static int				roi_HEIGHT;
 static int				roi_Y_OFFSET;
@@ -604,6 +607,7 @@ int extra_cam_setting(int camfd)
 	SetAutoExposure(camfd, V4L2_EXPOSURE_AUTO);
 	SetAutoExposureAutoPriority(camfd,0);
 	printf("-extra_cam_setting\n");
+
 #if 0
 	SetAutoExposure(camfd, /*V4L2_EXPOSURE_MANUAL ,*/ V4L2_EXPOSURE_APERTURE_PRIORITY  );
 	SetAutoExposureAutoPriority(camfd,0);
@@ -700,16 +704,15 @@ int spectraAnalysis(IplImage* framecopy, CvScalar rgb, float *pr, float *rr)
 /*
 p is a YUYV 422 format, so 640x480x16bits = 61440 bytes
 */
-static CvScalar processFrame(const void *p, int size)
+static void processFrame(const void *p, int size)
 {
 	IplImage* framecopy=NULL;
 	static uint64_t ut1;
 	uint64_t ut2;
 	struct timeval pt2;
 	pr_debug(DSP_INFO,"%s: size=0x%x\n", __func__, size);
-	float m_roi[3]={0.0};
 	CvRect sroi;
-	CvScalar m_rgb=cvScalar(m_roi[0],m_roi[1],m_roi[2], 0.0);
+
 
 	if(V4L2_PIX_FMT_MJPEG == v4l2_pix_fmt){
 		IplImage* frame;
@@ -736,74 +739,54 @@ static CvScalar processFrame(const void *p, int size)
 		//		printf("size too small\n");
 		//		return ;
 		//	}
-		framecopy = cvCreateImage(cvSize(win_width,win_height), IPL_DEPTH_8U, 3);
+		//RGB888
+		framecopy = cvCreateImage(cvSize(win_width, win_height), IPL_DEPTH_8U, 3);
 
 		if(enableInfraRed)
 			infrared_to_rgb888(win_width,win_height, (unsigned char *)p, framecopy->imageData);
 		else
-			yuyv_to_rgb24(win_width,win_height, (unsigned char *)p, framecopy->imageData);
-		roi_WIDTH = (win_width>>2);
-		roi_HEIGHT = (win_height/3);
-		roi_Y_OFFSET =	(90)/(480/win_height);
+			yuyv_to_rgb24(win_width, win_height, (unsigned char *)p, framecopy->imageData);
+		//setup a rectangle ROI
+		roi_WIDTH = (win_width>>2);	//160
+		roi_HEIGHT = (win_height/3);	//160
+		roi_Y_OFFSET =	(70);//(DEFAULT_HEIGHT/win_height);
+		//the ROI in the image
 		sroi.x = (framecopy->width - roi_WIDTH)/2 - 1;
 		sroi.y = (framecopy->height - roi_HEIGHT)/2 - 1+ roi_Y_OFFSET;
 		sroi.width = roi_WIDTH;
 		sroi.height = roi_HEIGHT ;
-		//roi_mean(framecopy, sroi, m_roi);
-		pr_debug(DSP_INFO,"m_roi(%.4f,%.4f,%.4f)\n", m_roi[0],m_roi[1],m_roi[2]);
-		//
-		//draw the bouding ROI on the frame
-		/*cvRectangle(framecopy, cvPoint(sroi.x, sroi.y),
-					cvPoint(sroi.x+sroi.width, sroi.y+sroi.height),
-					CV_RGB(255, 0, 0), ROI_BORDERW,8, 0);*/
 	}
 
-	char hrtext[40];
-	float pr=0.0;
-	static float valid_pr=0.0;
-	int n= spectraAnalysis(framecopy, m_rgb, &pr, NULL);
-	static CvScalar textColor={100, 100, 100};//B,G,R
-	if(n>0){
-	  //green color
-	  textColor=CV_RGB(0,255,0);
-	  valid_pr=pr;
-	}else if(n < 0) {
-	  //red color, release the cq and reload again!
-	  textColor=CV_RGB(255,0,0);
-	}
-	sprintf(hrtext,"%.1fbpm (%.2fHz)", valid_pr*60, valid_pr);
-	cvPrintf(framecopy, hrtext, cvPoint(200,40), cvFont(2.0,2.5), textColor);
-
+	char tempbuf[40];
 	//draw the bouding ROI on the frame
 	cvRectangle(framecopy, cvPoint(sroi.x, sroi.y),
 				cvPoint(sroi.x+sroi.width, sroi.y+sroi.height),
-				textColor, ROI_BORDERW,8, 0);
+				CV_RGB(255,0,0), ROI_BORDERW,8, 0);
 	gettimeofday(&pt2, NULL);
 	ut2 = (pt2.tv_sec * 1000000) + pt2.tv_usec;
 	if( ut1 && (ut2 > ut1)){
-//			printf("\npt=%lu us, fps=%.1f\n", ut2-ut1, 1000000.0/(ut2-ut1));
 	  pr_debug(DSP_INFO,"fps=%.0f\n", 1000000.0/(ut2-ut1));
-	  sprintf(hrtext,"fps:%.1f", 1000000.0/(ut2-ut1));
-	  cvPrintf(framecopy, hrtext, cvPoint(20,50), cvFont(1.5,1.0), CV_RGB(0,0,255));
+	  sprintf(tempbuf,"fps:%.1f", 1000000.0/(ut2-ut1));
+	  cvPrintf(framecopy, tempbuf, cvPoint(20,50), cvFont(1.5,1.0), CV_RGB(0,0,255));
 	}
 	ut1=ut2;
 
-	sprintf(hrtext,"press 'q' to quit...");
-	cvPrintf(framecopy, hrtext, cvPoint(10,460),cvFont(1.5,1.0), CV_RGB(255,255, 255));
+	sprintf(tempbuf,"press 'q' to quit...");
+	cvPrintf(framecopy, tempbuf, cvPoint(10,460),cvFont(1.5,1.0), CV_RGB(255,255, 255));
 
 	cvShowImage(windowname, framecopy);
 
 	if(framecopy)
 	  cvReleaseImage(&framecopy);
-
-	return m_rgb;
 }
 
+/*
+ * IO_METHOD_MMAP://!!!default method!!!
+ */
 static int readFrame(void)
 {
 	struct v4l2_buffer buf;
 	unsigned int i;
-	CvScalar m_rgb=cvScalarAll(0.0f);
 
 	pr_debug(DSP_INFO,"%s:\n", __func__);
 
@@ -824,7 +807,7 @@ static int readFrame(void)
 			}
 		}
 
-		m_rgb=processFrame(buffers[0].start, buffers[0].length);
+		processFrame(buffers[0].start, buffers[0].length);
 		break;
 
 	case IO_METHOD_MMAP://!!!default method!!!
@@ -850,7 +833,7 @@ static int readFrame(void)
 
 		assert(buf.index < n_buffers);
 
-		m_rgb=processFrame(buffers[buf.index].start, buf.bytesused);
+		processFrame(buffers[buf.index].start, buf.bytesused);
 
 		if (-1 == xioctl(fd, VIDIOC_QBUF, &buf))
 			errno_exit("VIDIOC_QBUF");
@@ -884,7 +867,7 @@ static int readFrame(void)
 
 		assert(i < n_buffers);
 
-		m_rgb = processFrame((void *)buf.m.userptr, buf.bytesused);
+		processFrame((void *)buf.m.userptr, buf.bytesused);
 
 		if (-1 == xioctl(fd, VIDIOC_QBUF, &buf))
 			errno_exit("VIDIOC_QBUF");
@@ -893,6 +876,7 @@ static int readFrame(void)
 
 	return 1;
 }
+
 
 static void captureVideo(void)
 {
@@ -1244,7 +1228,7 @@ static void init_device(void)
 		}
 		break;
 
-	case IO_METHOD_MMAP:
+	case IO_METHOD_MMAP://defaule method
 	case IO_METHOD_USERPTR:
 		if (!(cap.capabilities & V4L2_CAP_STREAMING)) {
 			fprintf(stderr, "%s does not support streaming i/o\n",
