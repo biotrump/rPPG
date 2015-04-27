@@ -639,7 +639,10 @@ void cvPrintf(IplImage* img, char *text, CvPoint TextPosition, CvFont Font1,
 int spectraAnalysis(IplImage* framecopy, CvScalar rgb, float *pr, float *rr)
 {
 	int n=0;
-#if 0
+#if 1
+	*pr=80.0f;
+	n=1;
+#else
 	int i
 	pr_debug(DSP_INFO,"+%s:\n", __func__);
 	//PCircularQueue pq[]={cq, cqLong};
@@ -706,6 +709,8 @@ static CvScalar processFrame(const void *p, int size)
 	pr_debug(DSP_INFO,"%s: size=0x%x\n", __func__, size);
 	float m_roi[3]={0.0};
 	CvRect sroi;
+	CvScalar m_rgb=cvScalar(m_roi[0],m_roi[1],m_roi[2], 0.0);
+
 	if(V4L2_PIX_FMT_MJPEG == v4l2_pix_fmt){
 		IplImage* frame;
 		CvMat cvmat = cvMat(win_height, win_width, CV_8UC3, (void*)p);//MJPEG buffer p
@@ -732,6 +737,7 @@ static CvScalar processFrame(const void *p, int size)
 		//		return ;
 		//	}
 		framecopy = cvCreateImage(cvSize(win_width,win_height), IPL_DEPTH_8U, 3);
+
 		if(enableInfraRed)
 			infrared_to_rgb888(win_width,win_height, (unsigned char *)p, framecopy->imageData);
 		else
@@ -752,11 +758,10 @@ static CvScalar processFrame(const void *p, int size)
 					CV_RGB(255, 0, 0), ROI_BORDERW,8, 0);*/
 	}
 
-	CvScalar m_rgb=cvScalar(m_roi[0],m_roi[1],m_roi[2], 0.0);
-	char hrtext[20];
+	char hrtext[40];
 	float pr=0.0;
 	static float valid_pr=0.0;
-	int n= spectraAnalysis(framecopy, m_rgb, &pr,NULL);
+	int n= spectraAnalysis(framecopy, m_rgb, &pr, NULL);
 	static CvScalar textColor={100, 100, 100};//B,G,R
 	if(n>0){
 	  //green color
@@ -773,7 +778,6 @@ static CvScalar processFrame(const void *p, int size)
 	cvRectangle(framecopy, cvPoint(sroi.x, sroi.y),
 				cvPoint(sroi.x+sroi.width, sroi.y+sroi.height),
 				textColor, ROI_BORDERW,8, 0);
-
 	gettimeofday(&pt2, NULL);
 	ut2 = (pt2.tv_sec * 1000000) + pt2.tv_usec;
 	if( ut1 && (ut2 > ut1)){
@@ -823,7 +827,7 @@ static int readFrame(void)
 		m_rgb=processFrame(buffers[0].start, buffers[0].length);
 		break;
 
-	case IO_METHOD_MMAP://default methid
+	case IO_METHOD_MMAP://!!!default method!!!
 		CLEAR(buf);
 
 		buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
