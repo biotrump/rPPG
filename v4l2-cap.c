@@ -26,7 +26,7 @@
 #include <opencv2/objdetect/objdetect.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
-#include "dsp-ica.h"
+//#include "dsp-ica.h"
 
 #define FORCED_WIDTH  640
 #define FORCED_HEIGHT 480

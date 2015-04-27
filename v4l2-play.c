@@ -55,8 +55,6 @@ struct buffer {
 	size_t  length;
 };
 
-static PCircularQueue cq,cqLong;
-
 static char            *dev_name;
 static enum io_method   v4l2_io = IO_METHOD_MMAP;
 static int              fd = -1;
@@ -78,7 +76,6 @@ static int				roi_Y_OFFSET;
 static void errno_exit(const char *s)
 {
 	pr_debug(DSP_ERROR, "+%s:%s error %d, %s\n", __func__, s, errno, strerror(errno));
-	deinitCQs();
 	exit(EXIT_FAILURE);
 }
 
@@ -407,7 +404,7 @@ int SetFPSParam(int fd, uint32_t fps)
     param.parm.capture.timeperframe.denominator = fps;
 	if (-1 == xioctl(fd, VIDIOC_S_PARM, &param)){
 		perror("unable to change device parameters");
-		return ;
+		return -1;
 	}
 
 	if(param.parm.capture.timeperframe.numerator){
@@ -415,12 +412,13 @@ int SetFPSParam(int fd, uint32_t fps)
 	                 / param.parm.capture.timeperframe.numerator;
 		if ((double)fps != fps_new) {
 			printf("unsupported frame rate [%d,%f]\n", fps, fps_new);
-			return;
+			return -1;
 		}else{
 			printf("new fps:%u = %u/%u\n\n",fps, param.parm.capture.timeperframe.denominator,
 			param.parm.capture.timeperframe.numerator);
 		}
 	}
+	return 0;
 }
 
 uint32_t GetFPSParam(int fd, double fps, struct v4l2_frmivalenum *pfrmival)
@@ -745,7 +743,7 @@ static CvScalar processFrame(const void *p, int size)
 		sroi.y = (framecopy->height - roi_HEIGHT)/2 - 1+ roi_Y_OFFSET;
 		sroi.width = roi_WIDTH;
 		sroi.height = roi_HEIGHT ;
-		roi_mean(framecopy, sroi, m_roi);
+		//roi_mean(framecopy, sroi, m_roi);
 		pr_debug(DSP_INFO,"m_roi(%.4f,%.4f,%.4f)\n", m_roi[0],m_roi[1],m_roi[2]);
 		//
 		//draw the bouding ROI on the frame
@@ -900,7 +898,6 @@ static void captureVideo(void)
 
 	pr_debug(DSP_DEBUG,"win_size=%ds, fps=%d\n", getSampleWindow(),getDSPFPS());
 
-	initCQs();
 	count = frame_count?frame_count:0xffffffff;
 	while (count-- > 0) {
 		for (;;) {
@@ -937,7 +934,7 @@ static void captureVideo(void)
 		}
 	}
 exit:;
-	deinitCQs();
+
 }
 
 static void stopCapturing(void)
@@ -1427,8 +1424,10 @@ static void usage(FILE *fp, int argc, char **argv)
 		 "-s | --steps         steps in seconds[%i]\n"
 		 "-v | --verbose       Verbose output\n"
 		 "",
-		 argv[0], frame_count, dev_name, getErrorLevel(), getMinSampleTime(),
-		getMaxSampleTime(), getRADICAL(), getSampleWindow(),getDSPFPS(),getStepping());
+		 argv[0], frame_count, dev_name, getErrorLevel(),
+			0, 0,0,0,0,0);
+		//getMinSampleTime(), getMaxSampleTime(), getRADICAL(),
+		//getSampleWindow(),getDSPFPS(),getStepping());
 }
 
 static const char short_options[] = "c:d:D:e:Ef:F:hi:Im:M:o:prR:s:uvw:";
@@ -1576,10 +1575,6 @@ int main(int argc, char **argv)
 		pr_debug(DSP_DEBUG, "Wrong args!!!\n");
 		exit(EXIT_FAILURE);
 	}
-	if(_init_dsp()){
-		pr_debug(DSP_DEBUG, "DSP init failed!!!\n");
-		exit(EXIT_FAILURE);
-	}
 	//start_logging("mylog.txt");
 	open_device();
 	init_device();
@@ -1594,7 +1589,6 @@ int main(int argc, char **argv)
 
 	uninit_device();
 	close_device();
-	_deinit_dsp();
 
 	//fprintf(stderr, "\n");
 	return 0;

@@ -3,17 +3,19 @@ project(rPPG C CXX)
 
 set(rPPG_VERSION 0.8)
 
+set(CMAKE_VERBOSE_MAKEFILE "ON")
+
 # Configure the warning and code coverage suppression file
-configure_file(
-  "${rPPG_SOURCE_DIR}/CTestCustom.cmake.in"
-  "${rPPG_BINARY_DIR}/CTestCustom.cmake"
-  COPYONLY
-)
+#configure_file(
+#  "${rPPG_SOURCE_DIR}/CTestCustom.cmake.in"
+#  "${rPPG_BINARY_DIR}/CTestCustom.cmake"
+#  COPYONLY
+#)
 
 message("CMAKE_SOURCE_DIR : ${CMAKE_SOURCE_DIR}")
 message("PROJECT_NAME : ${PROJECT_NAME}")
-message("DSP_SOURCE_DIR : ${DSP_SOURCE_DIR}")
-message("DSP_BINARY_DIR : ${DSP_BINARY_DIR}")
+message("rPPG_SOURCE_DIR : ${rPPG_SOURCE_DIR}")
+message("rPPG_BINARY_DIR : ${rPPG_BINARY_DIR}")
 
 # --------------------------------------------------
 # Organize output files.  On Windows this also keeps .dll files next
@@ -82,36 +84,6 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIE -pie -DADD_ -DHAVE_LAPACK_CONFIG_H  -D
 else(ANDROID_NDK)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DADD_ -DHAVE_LAPACK_CONFIG_H  -DLAPACK_COMPLEX_STRUCTURE")
 endif(ANDROID_NDK)
-# --------------------------------------------------
-if(ANDROID_NDK)
-# export FC=/path/to/android-ndk-r9/toolchains/arm-linux-androideabi-4.8.0/prebuilt/linux-x86/bin/arm-linux-androideabi-gfortran
-message ("**** CMAKE_Fortran_COMPILER full path: " ${CMAKE_Fortran_COMPILER})
-get_filename_component (Fortran_COMPILER_NAME ${CMAKE_Fortran_COMPILER} NAME)
-if (Fortran_COMPILER_NAME MATCHES "gfortran.*")
-  # gfortran
-  message ("*** Fortran compiler: " ${Fortran_COMPILER_NAME})
-  set (CMAKE_Fortran_FLAGS_RELEASE "-funroll-all-loops -fPIE -pie -fPIC -fno-f2c -O3")
-  set (CMAKE_Fortran_FLAGS_DEBUG   "-fno-f2c -O0 -fPIE -pie -fPIC -g")
-else (Fortran_COMPILER_NAME MATCHES "gfortran.*")
-  message ("CMAKE_Fortran_COMPILER full path: " ${CMAKE_Fortran_COMPILER})
-  message ("Fortran compiler: " ${Fortran_COMPILER_NAME})
-  message ("No optimized Fortran compiler flags are known, we just try -O2...")
-  set (CMAKE_Fortran_FLAGS_RELEASE "-O2")
-  set (CMAKE_Fortran_FLAGS_DEBUG   "-O0 -g")
-endif (Fortran_COMPILER_NAME MATCHES "gfortran.*")
-else(ANDROID_NDK)
-if (UNIX)
-   if ( "${CMAKE_Fortran_COMPILER}" MATCHES "ifort" )
-  set( CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -fltconsistency -fp_port" )
-   endif ()
-   if ( "${CMAKE_Fortran_COMPILER}" MATCHES "xlf" )
-  set( CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -qnosave -qstrict=none" )
-   endif ()
-# Delete libmtsk in linking sequence for Sun/Oracle Fortran Compiler.
-# This library is not present in the Sun package SolarisStudio12.3-linux-x86-bin
-   STRING(REPLACE \;mtsk\; \; CMAKE_Fortran_IMPLICIT_LINK_LIBRARIES "${CMAKE_Fortran_IMPLICIT_LINK_LIBRARIES}")
-endif ()
-endif(ANDROID_NDK)
 
 # --------------------------------------------------
 set(V4L2_LIB_DIR $ENV{V4L2_LIB_DIR})
@@ -121,11 +93,19 @@ message("INC:${V4L2_INC}" )
 include_directories("${V4L2_INC}")
 
 #finding libv4l2.a
-find_library (V4L2-LIB
-    NAMES v4l2
-    PATHS ${V4L2_LIB_DIR}/build/lib
-    PATH_SUFFIXES lib
-    NO_DEFAULT_PATH)
+if(ANDROID_NDK)
+	find_library (V4L2-LIB
+		NAMES v4l2-arm
+		PATHS ${V4L2_LIB_DIR}/build_and/lib
+		PATH_SUFFIXES lib
+		NO_DEFAULT_PATH)
+else(ANDROID_NDK)
+	find_library (V4L2-LIB
+		NAMES v4l2-x86
+		PATHS ${V4L2_LIB_DIR}/build_x86/lib
+		PATH_SUFFIXES lib
+		NO_DEFAULT_PATH)
+endif(ANDROID_NDK)
 message("V4L2-LIB=${V4L2-LIB} ")
 # --------------------------------------------------
 #opencv should be built first!
@@ -142,6 +122,9 @@ if(OpenCV_FOUND)
 else()
 	message(FATAL_ERROR "openCV not foud")
 endif()
+
+message("*** OpenCV_LIBS:${OpenCV_LIBS}")
+message("*** OpenCV_LIBRARIES:${OpenCV_LIBRARIES}")
 
 #openMP to avoid link error : omp_xxx error!
 # undefined reference to `GOMP_loop_dynamic_start
@@ -193,17 +176,6 @@ find_package (Threads REQUIRED)
 #message("Threads_LIBS :" ${Threads_LIBS})
 #if (Threads_FOUND)
 #endif (Threads_FOUND)
-# --------------------------------------------------
-set(rPPG_INSTALL_EXPORT_NAME dsplib-targets)
-
-macro(dsplib_install_library lib)
-  install(TARGETS ${lib}
-    EXPORT ${rPPG_INSTALL_EXPORT_NAME}
-    ARCHIVE DESTINATION lib${LIB_SUFFIX}
-    LIBRARY DESTINATION lib${LIB_SUFFIX}
-    RUNTIME DESTINATION bin
-  )
-endmacro()
 
 # --------------------------------------------------
 # Testing
@@ -211,11 +183,6 @@ endmacro()
 enable_testing()
 include(CTest)
 enable_testing()
-# --------------------------------------------------
-# Check for any necessary platform specific compiler flags
-include( CheckDSPLIBCompilerFlags )
-CheckDSPLIBCompilerFlags()
-
 # --------------------------------------------------
 # searching the header and lib
 # --------------------------------------------------
@@ -234,28 +201,7 @@ set( CMAKE_FIND_ROOT_PATH_MODE_LIBRARY NEVER )
 set( CMAKE_FIND_ROOT_PATH_MODE_INCLUDE NEVER )
 endif(ANDROID_NDK)
 # --------------------------------------------------
-# DSPLIB
-# User did not provide a DSPLIB Library but specified to search for one
-#if( USE_OPTIMIZED_DSPLIB )
-#  find_package( DSPLIB )
-#endif (USE_OPTIMIZED_DSPLIB)
 
-#message(STATUS "BUILD TESTING : ${BUILD_TESTING}" )
-#if(BUILD_TESTING)
-#  add_subdirectory(TESTING)
-#endif(BUILD_TESTING)
-
-#if(NOT BLAS_FOUND)
-#  set(ALL_TARGETS ${ALL_TARGETS} blas)
-#endif(NOT BLAS_FOUND)
-
-#if(NOT LATESTDSPLIB_FOUND)
-#  set(ALL_TARGETS ${ALL_TARGETS} dsplib)
-#endif(NOT LATESTDSPLIB_FOUND)
-
-#if(BUILD_TESTING OR DSPLIBE_WITH_TMG)
-#  set(ALL_TARGETS ${ALL_TARGETS} tmglib)
-#endif(BUILD_TESTING OR DSPLIBE_WITH_TMG)
 # --------------------------------------------------
 if(USE_BLIS)
 	message("BLIS_SRC=${BLIS_SRC}" )
@@ -384,6 +330,32 @@ if(FFTSLIB)
 endif(FFTSLIB)
 
 # --------------------------------------------------
+#find libdsp
+message("DSPLIB_SRC=${DSPLIB_SRC}" )
+
+find_path(DSP_INC dsp-lib.h
+			HINTS ${DSPLIB_SRC} )
+message("**DSP_INC=${DSP_INC}" )
+if(DSP_INC)
+	include_directories("${DSP_INC}")
+endif(DSP_INC)
+
+message("**DSPLIB_BIN=${DSPLIB_BIN} ")
+message("**DSPLIB_NAME=${DSPLIB_NAME}")
+
+#libbcv-dsp_x86
+find_library (DSPLIB
+			NAMES ${DSPLIB_NAME}
+			PATHS ${DSPLIB_BIN}
+			PATH_SUFFIXES lib
+			NO_DEFAULT_PATH)
+message("**DSPLIB=${DSPLIB} ")
+if(DSPLIB)
+	#link static lib
+	message("DSPLIB=${DSPLIB}")
+endif(DSPLIB)
+
+# --------------------------------------------------
 # switch searching path to NDK
 # --------------------------------------------------
 if(ANDROID_NDK)
@@ -392,116 +364,74 @@ set( CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY )
 set( CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY )
 endif(ANDROID_NDK)
 # --------------------------------------------------
-# By default static library
-#OPTION(BUILD_SHARED_LIBS "Build shared libraries" OFF )
-#OPTION(BUILD_STATIC_LIBS "Build static libraries" ON )
-#OPTION(BUILD_SHARED_LIBS "Build shared libraries" ON )
+#add_executable(rPPG-v4l
+#  pulse-v4l2.c
+#)
 
-# --------------------------------------------------
-if(ANDROID_NDK)
-set(ADB_LOG log)
-set(DSP_DEP_STATICS
-	${BLASLIBS}
-	gfortran
-	${CMAKE_THREAD_LIBS_INIT}
-	${FFTSLIB}
-	m
-	${ADB_LOG}
-	)
-else(ANDROID_NDK)
-set(DSP_DEP_STATICS
-	${BLASLIBS}
-	gfortran
-	${CMAKE_THREAD_LIBS_INIT}
-	${FFTSLIB}
-	m
-	)
-endif(ANDROID_NDK)
-
-# --------------------------------------------------
-#define the main sources for later build
-ADD_LIBRARY(dsp-main OBJECT
-	helper.c
-	matrix.c
-	detrend.c
-	radical.c
-	queue.c
-	spectra.c
-	dsp.c
-	)
-
-# --------------------------------------------------
-#build a shared lib
-# --------------------------------------------------
-if("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
-#libbcv-dsp.d.so
-ADD_LIBRARY(bcv-dsp_${MACHINE_ARCH}.d SHARED
-	$<TARGET_OBJECTS:dsp-main>
-	)
-else("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
-#libbcv-dsp.so
-ADD_LIBRARY(bcv-dsp_${MACHINE_ARCH} SHARED
-	$<TARGET_OBJECTS:dsp-main>
-	)
-
-target_link_libraries(bcv-dsp_${MACHINE_ARCH}
-	${DSP_DEP_STATICS}
-	)
-endif("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
-
-# --------------------------------------------------
-#build a static lib
-# --------------------------------------------------
-if("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
-#libbcv-dsp.d.a
-ADD_LIBRARY(bcv-dsp_static_${MACHINE_ARCH}.d STATIC
-	$<TARGET_OBJECTS:dsp-main>
-	)
-else("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
-#libbcv-dsp.d.a
-ADD_LIBRARY(bcv-dsp_static_${MACHINE_ARCH} STATIC
-	$<TARGET_OBJECTS:dsp-main>
-	)
-endif("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
-
-# --------------------------------------------------
-# --------------------------------------------------
-add_executable(rPPG-v4l
-  pulse-v4l2.c
+if(0)
+add_executable(pulse-v4l2
+	pulse-v4l2.c
+#	cam-play.c
+#  v4l2-cap.c
 )
 
-#the order is very important for atlas and lapack
 if(1)
 	if("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
-		target_link_libraries(mat_test
+		target_link_libraries(pulse-v4l2
 			bcv-dsp_${MACHINE_ARCH}.d
-			${V4L2-LIB}
+		)
+	else("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
+		target_link_libraries(pulse-v4l2
+			bcv-dsp_${MACHINE_ARCH}
+		)
+	endif("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
+else(1)
+	if("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
+		target_link_libraries(pulse-v4l2
+			bcv-dsp_static_${MACHINE_ARCH}.d
+			${DSP_DEP_STATICS}
+		)
+	else("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
+		target_link_libraries(pulse-v4l2
+			bcv-dsp_static_${MACHINE_ARCH}
+			${DSP_DEP_STATICS}
+		)
+	endif("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
+endif(1)
+endif(0)
+#the order is very important for atlas and lapack
+# --------------------------------------------------
+add_executable(v4l2-play
+	v4l2-play.c
+)
+
+if(1)
+#.so
+	if("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
+		target_link_libraries(v4l2-play
+			${DSPLIB}
 			${OpenCV_LIBS}
 		)
 	else("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
-		target_link_libraries(mat_test
-			bcv-dsp_${MACHINE_ARCH}
-			${V4L2-LIB}
+		target_link_libraries(v4l2-play
+			${DSPLIB}
 			${OpenCV_LIBS}
 		)
 	endif("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
 else(1)
 	if("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
-	target_link_libraries(rPPG-v4l
-		bcv-dsp_static_${MACHINE_ARCH}.d
-		${DSP_DEP_STATICS}
-		${V4L2-LIB}
-		${OpenCV_LIBS}
-	)
+		target_link_libraries(v4l2-play
+			${DSPLIB}.d
+			${DSP_DEP_STATICS}
+			${OpenCV_LIBS}
+		)
 	else("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
-	target_link_libraries(rPPG-v4l
-		bcv-dsp_static_${MACHINE_ARCH}
-		${DSP_DEP_STATICS}
-		${V4L2-LIB}
-		${OpenCV_LIBS}
-	)
+		target_link_libraries(v4l2-play
+			${DSPLIB}
+			${DSP_DEP_STATICS}
+			${OpenCV_LIBS}
+		)
 	endif("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
 endif(1)
 
 #the order is very important for atlas and lapack
-# --------------------------------------------------

@@ -39,7 +39,7 @@
 #define _INLINE_BINTEST_
 #endif
 
-#include "../../picort.c"
+//#include "../../picort.c"
 
 /*
 	object detection parameters
