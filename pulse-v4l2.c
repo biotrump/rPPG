@@ -3,7 +3,10 @@
  *
  *  This program can be used and distributed without restrictions.
  *
- *	This program were got from V4L2 API, Draft 0.20
+ *	This v4l2 sample program
+ * 	http://linuxtv.org/downloads/v4l-dvb-apis/capture-example.html
+ *
+ *	V4L2 API, Draft 0.20
  *		available at: http://v4l2spec.bytesex.org/
  */
 
@@ -28,14 +31,14 @@
 #include <opencv2/imgproc/imgproc.hpp>
 #include "dsp-lib.h"
 
-#define FORCED_WIDTH  640
-#define FORCED_HEIGHT 480
+#define DEFAULT_WIDTH  640
+#define DEFAULT_HEIGHT 480
 #define FORCED_FORMAT V4L2_PIX_FMT_YUYV	//V4L2_PIX_FMT_MJPEG
 #define FORCED_FIELD  V4L2_FIELD_ANY
 #define	ROI_BORDERW		(4)
-//#define	ROI_WIDTH		(FORCED_WIDTH>>2)	//(160)
-//#define	ROI_HEIGHT		(FORCED_HEIGHT/3)	//(180)
-//#define ROI_Y_OFFSET	(90)/(480/FORCED_HEIGHT)
+//#define	ROI_WIDTH		(DEFAULT_WIDTH>>2)	//(160)
+//#define	ROI_HEIGHT		(DEFAULT_HEIGHT/3)	//(180)
+//#define ROI_Y_OFFSET	(90)/(480/DEFAULT_HEIGHT)
 
 /*http://forum.processing.org/one/topic/webcam-with-stable-framerate-25fps-on-high-resolution.html
 The stable fps can only occur in the low frame rate. Higher fps>15 may not be stable.
@@ -55,8 +58,6 @@ struct buffer {
 	size_t  length;
 };
 
-static PCircularQueue cq,cqLong;
-
 static char            *dev_name;
 static enum io_method   v4l2_io = IO_METHOD_MMAP;
 static int              fd = -1;
@@ -69,8 +70,8 @@ static int				enableInfraRed=0;
 static char 			*windowname="v4l2 capture";
 static unsigned 		v4l2_pix_fmt=FORCED_FORMAT;
 
-static int 				win_width = FORCED_WIDTH;
-static int 				win_height = FORCED_HEIGHT;
+static int 				win_width = DEFAULT_WIDTH;
+static int 				win_height = DEFAULT_HEIGHT;
 static int				roi_WIDTH;
 static int				roi_HEIGHT;
 static int				roi_Y_OFFSET;
@@ -78,7 +79,6 @@ static int				roi_Y_OFFSET;
 static void errno_exit(const char *s)
 {
 	pr_debug(DSP_ERROR, "+%s:%s error %d, %s\n", __func__, s, errno, strerror(errno));
-	deinitCQs();
 	exit(EXIT_FAILURE);
 }
 
@@ -407,7 +407,7 @@ int SetFPSParam(int fd, uint32_t fps)
     param.parm.capture.timeperframe.denominator = fps;
 	if (-1 == xioctl(fd, VIDIOC_S_PARM, &param)){
 		perror("unable to change device parameters");
-		return ;
+		return -1;
 	}
 
 	if(param.parm.capture.timeperframe.numerator){
@@ -415,12 +415,13 @@ int SetFPSParam(int fd, uint32_t fps)
 	                 / param.parm.capture.timeperframe.numerator;
 		if ((double)fps != fps_new) {
 			printf("unsupported frame rate [%d,%f]\n", fps, fps_new);
-			return;
+			return -1;
 		}else{
 			printf("new fps:%u = %u/%u\n\n",fps, param.parm.capture.timeperframe.denominator,
 			param.parm.capture.timeperframe.numerator);
 		}
 	}
+	return 0;
 }
 
 uint32_t GetFPSParam(int fd, double fps, struct v4l2_frmivalenum *pfrmival)
@@ -638,10 +639,16 @@ void cvPrintf(IplImage* img, char *text, CvPoint TextPosition, CvFont Font1,
   //cvPutText(img, text, TextPosition, &Font1, CV_RGB(0,255,0));
 }
 
-int spectraAnalysis(IplImage* framecopy, CvScalar rgb, float *pr, float *rr)
+int spectraAnalysis(IplImage* framecopy, CvScalar roi_rgb, float *pr, float *rr)
 {
 	int n=0;
-#if 0
+#if 1
+	float rgb[3];
+	rgb[0]=roi_rgb.val[0];
+	rgb[1]=roi_rgb.val[1];
+	rgb[2]=roi_rgb.val[2];
+	dsp_process(rgb);
+#else
 	int i
 	pr_debug(DSP_INFO,"+%s:\n", __func__);
 	//PCircularQueue pq[]={cq, cqLong};
@@ -697,6 +704,36 @@ int spectraAnalysis(IplImage* framecopy, CvScalar rgb, float *pr, float *rr)
 }
 
 /*
+openCV roi mean
+*/
+static void roi_mean(IplImage *img, CvRect roi, float *m)
+{
+	int i,j;
+	float ra=0.0,r=0.0,g=0.0,b=0.0;
+
+	pr_debug(DSP_INFO,"+%s:(x=%d,y=%d,w=%d,h=%d)\n", __func__, roi.x,roi.y,
+			 roi.width,roi.height);
+
+	/* averaging ROI's pixel*/
+	for(i=roi.y;i< (roi.y+roi.height);i++)
+    {
+        for(j=roi.x*img->nChannels;j< (roi.x + roi.width) * img->nChannels;j+=img->nChannels)
+        {
+            b += (unsigned char)img->imageData[i*img->widthStep+j];
+            g += (unsigned char)img->imageData[i*img->widthStep+j+1];
+            r += (unsigned char)img->imageData[i*img->widthStep+j+2];
+        }
+    }
+    ra=(roi.width*roi.height);
+	m[0]=b/ra;
+	m[1]=g/ra;
+	m[2]=r/ra;
+
+	pr_debug(DSP_INFO,"-%s:(b,g,r)=%.4f %.4f %.4f\n",__func__,
+			 m[0],m[1],m[2]);
+}
+
+/*
 p is a YUYV 422 format, so 640x480x16bits = 61440 bytes
 */
 static CvScalar processFrame(const void *p, int size)
@@ -705,9 +742,9 @@ static CvScalar processFrame(const void *p, int size)
 	static uint64_t ut1;
 	uint64_t ut2;
 	struct timeval pt2;
-	pr_debug(DSP_INFO,"%s: size=0x%x\n", __func__, size);
 	float m_roi[3]={0.0};
 	CvRect sroi;
+	pr_debug(DSP_INFO,"%s: size=0x%x\n", __func__, size);
 	if(V4L2_PIX_FMT_MJPEG == v4l2_pix_fmt){
 		IplImage* frame;
 		CvMat cvmat = cvMat(win_height, win_width, CV_8UC3, (void*)p);//MJPEG buffer p
@@ -738,24 +775,21 @@ static CvScalar processFrame(const void *p, int size)
 			infrared_to_rgb888(win_width,win_height, (unsigned char *)p, framecopy->imageData);
 		else
 			yuyv_to_rgb24(win_width,win_height, (unsigned char *)p, framecopy->imageData);
-		roi_WIDTH = (win_width>>2);
-		roi_HEIGHT = (win_height/3);
-		roi_Y_OFFSET =	(90)/(480/win_height);
+		//setup a rectangle ROI
+		roi_WIDTH = (win_width>>2);	//160
+		roi_HEIGHT = (win_height/3);	//160
+		roi_Y_OFFSET =	(70);//(DEFAULT_HEIGHT/win_height);
+		//the ROI in the image
 		sroi.x = (framecopy->width - roi_WIDTH)/2 - 1;
 		sroi.y = (framecopy->height - roi_HEIGHT)/2 - 1+ roi_Y_OFFSET;
 		sroi.width = roi_WIDTH;
 		sroi.height = roi_HEIGHT ;
 		roi_mean(framecopy, sroi, m_roi);
 		pr_debug(DSP_INFO,"m_roi(%.4f,%.4f,%.4f)\n", m_roi[0],m_roi[1],m_roi[2]);
-		//
-		//draw the bouding ROI on the frame
-		/*cvRectangle(framecopy, cvPoint(sroi.x, sroi.y),
-					cvPoint(sroi.x+sroi.width, sroi.y+sroi.height),
-					CV_RGB(255, 0, 0), ROI_BORDERW,8, 0);*/
 	}
 
 	CvScalar m_rgb=cvScalar(m_roi[0],m_roi[1],m_roi[2], 0.0);
-	char hrtext[20];
+	char tempstr[40];
 	float pr=0.0;
 	static float valid_pr=0.0;
 	int n= spectraAnalysis(framecopy, m_rgb, &pr,NULL);
@@ -768,8 +802,8 @@ static CvScalar processFrame(const void *p, int size)
 	  //red color, release the cq and reload again!
 	  textColor=CV_RGB(255,0,0);
 	}
-	sprintf(hrtext,"%.1fbpm (%.2fHz)", valid_pr*60, valid_pr);
-	cvPrintf(framecopy, hrtext, cvPoint(200,40), cvFont(2.0,2.5), textColor);
+	sprintf(tempstr,"%.1fbpm (%.2fHz)", valid_pr*60, valid_pr);
+	cvPrintf(framecopy, tempstr, cvPoint(200,40), cvFont(2.0,2.5), textColor);
 
 	//draw the bouding ROI on the frame
 	cvRectangle(framecopy, cvPoint(sroi.x, sroi.y),
@@ -779,15 +813,14 @@ static CvScalar processFrame(const void *p, int size)
 	gettimeofday(&pt2, NULL);
 	ut2 = (pt2.tv_sec * 1000000) + pt2.tv_usec;
 	if( ut1 && (ut2 > ut1)){
-//			printf("\npt=%lu us, fps=%.1f\n", ut2-ut1, 1000000.0/(ut2-ut1));
 	  pr_debug(DSP_INFO,"fps=%.0f\n", 1000000.0/(ut2-ut1));
-	  sprintf(hrtext,"fps:%.1f", 1000000.0/(ut2-ut1));
-	  cvPrintf(framecopy, hrtext, cvPoint(20,50), cvFont(1.5,1.0), CV_RGB(0,0,255));
+	  sprintf(tempstr,"fps:%.1f", 1000000.0/(ut2-ut1));
+	  cvPrintf(framecopy, tempstr, cvPoint(20,50), cvFont(1.5,1.0), CV_RGB(0,0,255));
 	}
 	ut1=ut2;
 
-	sprintf(hrtext,"press 'q' to quit...");
-	cvPrintf(framecopy, hrtext, cvPoint(10,460),cvFont(1.5,1.0), CV_RGB(255,255, 255));
+	sprintf(tempstr,"press 'q' to quit...");
+	cvPrintf(framecopy, tempstr, cvPoint(10,460),cvFont(1.5,1.0), CV_RGB(255,255, 255));
 
 	cvShowImage(windowname, framecopy);
 
@@ -797,6 +830,9 @@ static CvScalar processFrame(const void *p, int size)
 	return m_rgb;
 }
 
+/*
+ * IO_METHOD_MMAP://!!!default method!!!
+ */
 static int readFrame(void)
 {
 	struct v4l2_buffer buf;
@@ -825,7 +861,7 @@ static int readFrame(void)
 		m_rgb=processFrame(buffers[0].start, buffers[0].length);
 		break;
 
-	case IO_METHOD_MMAP://default methid
+	case IO_METHOD_MMAP://!!!default method!!!
 		CLEAR(buf);
 
 		buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
@@ -900,7 +936,6 @@ static void captureVideo(void)
 
 	pr_debug(DSP_DEBUG,"win_size=%ds, fps=%d\n", getSampleWindow(),getDSPFPS());
 
-	initCQs();
 	count = frame_count?frame_count:0xffffffff;
 	while (count-- > 0) {
 		for (;;) {
@@ -937,7 +972,6 @@ static void captureVideo(void)
 		}
 	}
 exit:;
-	deinitCQs();
 }
 
 static void stopCapturing(void)
@@ -1243,7 +1277,7 @@ static void init_device(void)
 		}
 		break;
 
-	case IO_METHOD_MMAP:
+	case IO_METHOD_MMAP://defaule method
 	case IO_METHOD_USERPTR:
 		if (!(cap.capabilities & V4L2_CAP_STREAMING)) {
 			fprintf(stderr, "%s does not support streaming i/o\n",
@@ -1427,8 +1461,10 @@ static void usage(FILE *fp, int argc, char **argv)
 		 "-s | --steps         steps in seconds[%i]\n"
 		 "-v | --verbose       Verbose output\n"
 		 "",
-		 argv[0], frame_count, dev_name, getErrorLevel(), getMinSampleTime(),
-		getMaxSampleTime(), getRADICAL(), getSampleWindow(),getDSPFPS(),getStepping());
+		 argv[0], frame_count, dev_name, getErrorLevel(),
+			0, 0,0,0,0,0);
+		//getMinSampleTime(), getMaxSampleTime(), getRADICAL(),
+		//getSampleWindow(),getDSPFPS(),getStepping());
 }
 
 static const char short_options[] = "c:d:D:e:Ef:F:hi:Im:M:o:prR:s:uvw:";
@@ -1576,7 +1612,8 @@ int main(int argc, char **argv)
 		pr_debug(DSP_DEBUG, "Wrong args!!!\n");
 		exit(EXIT_FAILURE);
 	}
-	if(_init_dsp()){
+	//25fps, step=1, minthr=8s, maxthr=60, 3 channels
+	if(dsp_init(10, 1, 8, 60, 3)){
 		pr_debug(DSP_DEBUG, "DSP init failed!!!\n");
 		exit(EXIT_FAILURE);
 	}
@@ -1594,7 +1631,7 @@ int main(int argc, char **argv)
 
 	uninit_device();
 	close_device();
-	_deinit_dsp();
+	dsp_deinit();//!!! waiting for dsp thread to quit!!!
 
 	//fprintf(stderr, "\n");
 	return 0;

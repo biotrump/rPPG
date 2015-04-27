@@ -363,42 +363,7 @@ set( CMAKE_FIND_ROOT_PATH_MODE_PROGRAM ONLY )
 set( CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY )
 set( CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY )
 endif(ANDROID_NDK)
-# --------------------------------------------------
-#add_executable(rPPG-v4l
-#  pulse-v4l2.c
-#)
 
-if(0)
-add_executable(pulse-v4l2
-	pulse-v4l2.c
-#	cam-play.c
-#  v4l2-cap.c
-)
-
-if(1)
-	if("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
-		target_link_libraries(pulse-v4l2
-			bcv-dsp_${MACHINE_ARCH}.d
-		)
-	else("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
-		target_link_libraries(pulse-v4l2
-			bcv-dsp_${MACHINE_ARCH}
-		)
-	endif("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
-else(1)
-	if("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
-		target_link_libraries(pulse-v4l2
-			bcv-dsp_static_${MACHINE_ARCH}.d
-			${DSP_DEP_STATICS}
-		)
-	else("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
-		target_link_libraries(pulse-v4l2
-			bcv-dsp_static_${MACHINE_ARCH}
-			${DSP_DEP_STATICS}
-		)
-	endif("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
-endif(1)
-endif(0)
 #the order is very important for atlas and lapack
 # --------------------------------------------------
 add_executable(v4l2-play
@@ -433,5 +398,38 @@ else(1)
 		)
 	endif("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
 endif(1)
+# --------------------------------------------------
+add_executable(pulse-v4l2
+	pulse-v4l2.c
+#	cam-play.c
+#  v4l2-cap.c
+)
 
-#the order is very important for atlas and lapack
+if(1)
+#.so
+	if("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
+		target_link_libraries(pulse-v4l2
+			${DSPLIB}
+			${OpenCV_LIBS}
+		)
+	else("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
+		target_link_libraries(pulse-v4l2
+			${DSPLIB}
+			${OpenCV_LIBS}
+		)
+	endif("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
+else(1)
+	if("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
+		target_link_libraries(pulse-v4l2
+			${DSPLIB}.d
+			${DSP_DEP_STATICS}
+			${OpenCV_LIBS}
+		)
+	else("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
+		target_link_libraries(pulse-v4l2
+			${DSPLIB}
+			${DSP_DEP_STATICS}
+			${OpenCV_LIBS}
+		)
+	endif("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
+endif(1)

@@ -67,7 +67,7 @@ static int				out_buf;
 static int              force_format;
 static int              frame_count = 0;
 static int				enableInfraRed=0;
-static char 			*windowname="v4l2 capture";
+static char 			*windowname="pulse v4l2";
 static unsigned 		v4l2_pix_fmt=FORCED_FORMAT;
 
 static int 				win_width = DEFAULT_WIDTH;
