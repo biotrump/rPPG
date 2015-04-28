@@ -44,6 +44,7 @@
 The stable fps can only occur in the low frame rate. Higher fps>15 may not be stable.
 */
 //#define FORCED_FPS		(9)	//fps9 or fps10 are the most stable fps.
+static int g_curFPS=10;	//default is 10fps
 
 #define CLEAR(x) memset(&(x), 0, sizeof(x))
 
@@ -75,6 +76,7 @@ static int 				win_height = DEFAULT_HEIGHT;
 static int				roi_WIDTH;
 static int				roi_HEIGHT;
 static int				roi_Y_OFFSET;
+static int		min_win=4, max_win=8, dsp_step=1;//unit second
 
 static void errno_exit(const char *s)
 {
@@ -583,7 +585,9 @@ int extra_cam_setting(int camfd)
 	struct v4l2_format fmt;
 	struct v4l2_frmivalenum frmival;
 	uint32_t fps;
-	printf("+extra_cam_setting\n");
+
+	pr_debug(DSP_INFO,"%s:\n",__func__);
+
 	print_caps(camfd);
 	GetVideoFMT(camfd, &fmt);
 	fmt.fmt.pix.width=win_width;
@@ -603,11 +607,13 @@ int extra_cam_setting(int camfd)
 	SetFPSParam(camfd, fps);
 	setDSPFPS(fps);	//set the proper fps by the camera's capabilities
 
-	SetAutoWhiteBalance(camfd, 0);
+	SetAutoWhiteBalance(camfd, 0);//disable white balance
+#if 0
 	SetAutoExposure(camfd, V4L2_EXPOSURE_AUTO);
 	SetAutoExposureAutoPriority(camfd,0);
+
 	printf("-extra_cam_setting\n");
-#if 0
+
 	SetAutoExposure(camfd, /*V4L2_EXPOSURE_MANUAL ,*/ V4L2_EXPOSURE_APERTURE_PRIORITY  );
 	SetAutoExposureAutoPriority(camfd,0);
 	printf("AutoPriority=%d\n",GetAutoExposureAutoPriority(camfd));
@@ -642,7 +648,7 @@ void cvPrintf(IplImage* img, char *text, CvPoint TextPosition, CvFont Font1,
 int spectraAnalysis(IplImage* framecopy, CvScalar roi_rgb, float *pr, float *rr)
 {
 	int n=0;
-#if 1
+
 	float rgb[3], ppg[MAX_CHANNELS*2];
 	int steps=getStepping()*getDSPFPS();
 	char tempstr[80];
@@ -655,62 +661,13 @@ int spectraAnalysis(IplImage* framecopy, CvScalar roi_rgb, float *pr, float *rr)
 	//dsp_process(rgb);
 	if(!dsp_process_sync(rgb, 50.0f, 160.0f)){
 		getPPG(ppg, MAX_CHANNELS);//get the result of R,G,B channel
+		// ppg[] LSB = B:(bpm, mag) G:(bpm, mag) R:(bpm,mag)
 		sprintf(tempstr,"[b:%5.1f/%6.1f][g:%5.1f/%6.1f][r:%5.1f/%6.1f]",
 				ppg[0],ppg[1],ppg[2],ppg[3],ppg[4],ppg[5]);
 		cvPrintf(framecopy, tempstr, cvPoint(200,60), cvFont(1.0,1.0), CV_RGB(0,255,0));
+		n=3;
+		*pr = ppg[2];
 	}
-#else
-	int i
-	pr_debug(DSP_INFO,"+%s:\n", __func__);
-	//PCircularQueue pq[]={cq, cqLong};
-	PCircularQueue pq[]={cq};
-	int win_samples[]={getSampleWindow()*getDSPFPS(), getMaxSampleTime() * getDSPFPS()};
-	//insert to cq and process it
-	for(i = 0; i < sizeof(pq)/sizeof(PCircularQueue); i ++){
-		if(cqInsert(pq[i], (PElemType)&rgb)){
-			pr_debug(DSP_DEBUG,"!!!!queue[%d] is full and is wating...\n", i);
-		}else{
-			int j;
-			int steps=getStepping()*getDSPFPS();
-			pr_debug(DSP_INFO,"cq[%d]: %d\n",i, cqUsedSize(pq[i]));
-			//indicator to count bpm
-			char hrtext[20];
-			sprintf(hrtext,"[%d/%d]", cqUsedSize(pq[i])+1,cqSize(pq[i]));
-			cvPrintf(framecopy, hrtext, cvPoint(200,90), cvFont(2.0,1.0), CV_RGB(0,255,0));
-
-			if(cqFull(pq[i])){
-				int row,col;
-				CvMat *rawTrace;
-				//read queue to rawtrace
-				pr_debug(DSP_DEBUG,"###cq[%d] is full : %d, process it\n", i,
-						 cqUsedSize(pq[i]));
-				pr_debug(DSP_INFO,"N=%d\n", win_samples[i]);
-				//3 rows (BGR) * N
-				rawTrace = cvCreateMat(MAX_CHANNELS, win_samples[i], RAW_ELEMENT_TYPE);
-				if(rawTrace){
-					CvScalar spectra[MAX_SPECTRAS];//(magnitude, freq, channel)
-					cqClone(pq[i], rawTrace);
-					n=rawTraceSpectra(rawTrace, spectra);
-					//clear out steps from cq and waits for when cq is full.
-					for(j=0;j<steps;j++) cqDelete(pq[i], NULL);
-					pr_debug(DSP_INFO,"[%d] frames are cleared out: %d left\n", steps,
-							cqUsedSize(pq[i]));
-					if(n && pr)
-					  *pr=spectra[0].val[1];
-					else n=-1;//no valid spectra is found!
-					for(j=0; j<n;j++) {
-						pr_debug(DSP_DEBUG,"\n***[%d: %.1fbpm (%.3fhz), mag=%.3f,"
-								 "ch=%.0f]\n\n",
-								 j, spectra[j].val[1]*60.0,spectra[j].val[1],
-								spectra[j].val[0],spectra[j].val[2]);
-					}
-					cvReleaseMat(&rawTrace);
-				}
-			}
-		}
-	}
-  pr_debug(DSP_INFO,"-%s:n=%d, freq=%.3f\n", __func__,n,pr?*pr:0);
-#endif
   return n;
 }
 
@@ -730,6 +687,9 @@ static void roi_mean(IplImage *img, CvRect roi, float *m)
     {
         for(j=roi.x*img->nChannels;j< (roi.x + roi.width) * img->nChannels;j+=img->nChannels)
         {
+			/* B,G,R are packed in 3 bytes as a pixel
+			 * the image is height(row) * width(column)
+			 */
             b += (unsigned char)img->imageData[i*img->widthStep+j];
             g += (unsigned char)img->imageData[i*img->widthStep+j+1];
             r += (unsigned char)img->imageData[i*img->widthStep+j+2];
@@ -753,9 +713,10 @@ static CvScalar processFrame(const void *p, int size)
 	static uint64_t ut1;
 	uint64_t ut2;
 	struct timeval pt2;
-	float m_roi[3]={0.0};
-	CvRect sroi;
-	pr_debug(DSP_INFO,"%s: size=0x%x\n", __func__, size);
+	float m_roi[MAX_CHANNELS]={0.0};
+	//CvRect sroi;
+	RECT roi;
+	//pr_debug(DSP_INFO,"%s: size=0x%x\n", __func__, size);
 	if(V4L2_PIX_FMT_MJPEG == v4l2_pix_fmt){
 		IplImage* frame;
 		CvMat cvmat = cvMat(win_height, win_width, CV_8UC3, (void*)p);//MJPEG buffer p
@@ -781,22 +742,31 @@ static CvScalar processFrame(const void *p, int size)
 		//		printf("size too small\n");
 		//		return ;
 		//	}
-		framecopy = cvCreateImage(cvSize(win_width,win_height), IPL_DEPTH_8U, 3);
+		framecopy = cvCreateImage(cvSize(win_width, win_height), IPL_DEPTH_8U, 3);
 		if(enableInfraRed)
 			infrared_to_rgb888(win_width,win_height, (unsigned char *)p, framecopy->imageData);
 		else
-			yuyv_to_rgb24(win_width,win_height, (unsigned char *)p, framecopy->imageData);
+			yuyv_to_rgb24(win_width, win_height, (unsigned char *)p, framecopy->imageData);
 		//setup a rectangle ROI
 		roi_WIDTH = (win_width>>2);	//160
 		roi_HEIGHT = (win_height/3);	//160
 		roi_Y_OFFSET =	(70);//(DEFAULT_HEIGHT/win_height);
+
 		//the ROI in the image
+		/*
 		sroi.x = (framecopy->width - roi_WIDTH)/2 - 1;
 		sroi.y = (framecopy->height - roi_HEIGHT)/2 - 1+ roi_Y_OFFSET;
 		sroi.width = roi_WIDTH;
 		sroi.height = roi_HEIGHT ;
 		roi_mean(framecopy, sroi, m_roi);
-		pr_debug(DSP_INFO,"m_roi(%.4f,%.4f,%.4f)\n", m_roi[0],m_roi[1],m_roi[2]);
+		*/
+		MATRIX img={win_height, win_width, framecopy->imageData };
+		roi.x = (framecopy->width - roi_WIDTH)/2 - 1;
+		roi.y = (framecopy->height - roi_HEIGHT)/2 - 1+ roi_Y_OFFSET;
+		roi.width = roi_WIDTH;
+		roi.height = roi_HEIGHT ;
+		roiMean(MAX_CHANNELS, &img, roi, m_roi);
+		//pr_debug(DSP_INFO,"m_roi(%.4f,%.4f,%.4f)\n", m_roi[0],m_roi[1],m_roi[2]);
 	}
 
 	CvScalar m_rgb=cvScalar(m_roi[0],m_roi[1],m_roi[2], 0.0);
@@ -813,14 +783,19 @@ static CvScalar processFrame(const void *p, int size)
 	  //red color, release the cq and reload again!
 	  textColor=CV_RGB(255,0,0);
 	}
-	sprintf(tempstr,"%.1fbpm (%.2fHz)", valid_pr*60, valid_pr);
+	sprintf(tempstr,"%.1fbpm (%.2fHz)", valid_pr, valid_pr/60.0f);
 	cvPrintf(framecopy, tempstr, cvPoint(200,40), cvFont(2.0,2.5), textColor);
 
 	//draw the bouding ROI on the frame
+#if 0
 	cvRectangle(framecopy, cvPoint(sroi.x, sroi.y),
 				cvPoint(sroi.x+sroi.width, sroi.y+sroi.height),
 				textColor, ROI_BORDERW,8, 0);
-
+#else
+	cvRectangle(framecopy, cvPoint(roi.x, roi.y),
+				cvPoint(roi.x+roi.width, roi.y+roi.height),
+				textColor, ROI_BORDERW,8, 0);
+#endif
 	gettimeofday(&pt2, NULL);
 	ut2 = (pt2.tv_sec * 1000000) + pt2.tv_usec;
 	if( ut1 && (ut2 > ut1)){
@@ -1561,7 +1536,27 @@ static int option(int argc, char **argv)
 
 		case 'F':
 			errno = 0;
-			setDSPFPS(strtol(optarg, NULL, 0));
+			setDSPFPS( g_curFPS = strtol(optarg, NULL, 0) );
+			if (errno)
+				errno_exit(optarg);
+			break;
+
+		case 'm':
+			errno = 0;
+			min_win = strtol(optarg, NULL, 0);
+			if (errno)
+				errno_exit(optarg);
+			break;
+
+		case 'M':
+			errno = 0;
+			max_win = strtol(optarg, NULL, 0);
+			if (errno)
+				errno_exit(optarg);
+			break;
+		case 's':
+			errno = 0;
+			dsp_step = strtol(optarg, NULL, 0);
 			if (errno)
 				errno_exit(optarg);
 			break;
@@ -1625,16 +1620,18 @@ int main(int argc, char **argv)
 	}
 	//start_logging("mylog.txt");
 	open_device();
-	init_device();
 
-	cvNamedWindow(windowname,CV_WINDOW_AUTOSIZE);
+	pr_debug(DSP_DEBUG, "dsp_step=%d, min_win=%d, max_win=%d!!!\n",
+		dsp_step, min_win, max_win);
 
-	//25fps, step=1, minthr=8s, maxthr=60, 3 channels, synchornous
-	if(dsp_init(10, 1, 4, 8, 3, 0)){
+	//10fps, step=1, minthr=8s, maxthr=60, 3 channels, synchornous
+	if(dsp_init(g_curFPS, dsp_step, min_win, max_win, 3, 0)){
 		pr_debug(DSP_DEBUG, "DSP init failed!!!\n");
 		exit(EXIT_FAILURE);
 	}
+	init_device();
 
+	cvNamedWindow(windowname,CV_WINDOW_AUTOSIZE);
 	startCapturing();
 	captureVideo();
 	stopCapturing();
