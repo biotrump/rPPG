@@ -643,11 +643,22 @@ int spectraAnalysis(IplImage* framecopy, CvScalar roi_rgb, float *pr, float *rr)
 {
 	int n=0;
 #if 1
-	float rgb[3];
+	float rgb[3], ppg[MAX_CHANNELS*2];
+	int steps=getStepping()*getDSPFPS();
+	char tempstr[80];
+	sprintf(tempstr,"[%d/%d]", getDSPCQ_Size(), getNextStepping());
+	cvPrintf(framecopy, tempstr, cvPoint(200,90), cvFont(2.0,1.0), CV_RGB(0,255,0));
+
 	rgb[0]=roi_rgb.val[0];
 	rgb[1]=roi_rgb.val[1];
 	rgb[2]=roi_rgb.val[2];
-	dsp_process(rgb);
+	//dsp_process(rgb);
+	if(!dsp_process_sync(rgb, 50.0f, 160.0f)){
+		getPPG(ppg, MAX_CHANNELS);//get the result of R,G,B channel
+		sprintf(tempstr,"[b:%5.1f/%6.1f][g:%5.1f/%6.1f][r:%5.1f/%6.1f]",
+				ppg[0],ppg[1],ppg[2],ppg[3],ppg[4],ppg[5]);
+		cvPrintf(framecopy, tempstr, cvPoint(200,60), cvFont(1.0,1.0), CV_RGB(0,255,0));
+	}
 #else
 	int i
 	pr_debug(DSP_INFO,"+%s:\n", __func__);
@@ -792,7 +803,7 @@ static CvScalar processFrame(const void *p, int size)
 	char tempstr[40];
 	float pr=0.0;
 	static float valid_pr=0.0;
-	int n= spectraAnalysis(framecopy, m_rgb, &pr,NULL);
+	int n= spectraAnalysis(framecopy, m_rgb, &pr, NULL);
 	static CvScalar textColor={100, 100, 100};//B,G,R
 	if(n>0){
 	  //green color
@@ -1411,7 +1422,7 @@ static void open_device(void)
 {
 	struct stat st;
 
-	pr_debug(DSP_INFO,"+%s:\n", __func__);
+	pr_debug(DSP_INFO,"+%s:%s\n", __func__, dev_name);
 
 	if (-1 == stat(dev_name, &st)) {
 		fprintf(stderr, "Cannot identify '%s': %d, %s\n",
@@ -1612,16 +1623,17 @@ int main(int argc, char **argv)
 		pr_debug(DSP_DEBUG, "Wrong args!!!\n");
 		exit(EXIT_FAILURE);
 	}
-	//25fps, step=1, minthr=8s, maxthr=60, 3 channels
-	if(dsp_init(10, 1, 8, 60, 3)){
-		pr_debug(DSP_DEBUG, "DSP init failed!!!\n");
-		exit(EXIT_FAILURE);
-	}
 	//start_logging("mylog.txt");
 	open_device();
 	init_device();
 
 	cvNamedWindow(windowname,CV_WINDOW_AUTOSIZE);
+
+	//25fps, step=1, minthr=8s, maxthr=60, 3 channels, synchornous
+	if(dsp_init(10, 1, 4, 8, 3, 0)){
+		pr_debug(DSP_DEBUG, "DSP init failed!!!\n");
+		exit(EXIT_FAILURE);
+	}
 
 	startCapturing();
 	captureVideo();
