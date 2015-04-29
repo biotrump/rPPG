@@ -36,6 +36,8 @@
 #define FORCED_FORMAT V4L2_PIX_FMT_YUYV	//V4L2_PIX_FMT_MJPEG
 #define FORCED_FIELD  V4L2_FIELD_ANY
 #define	ROI_BORDERW		(4)
+#define	MIN_HR_BPM	(45.0f)
+#define	MAX_HR_BPM	(180.0f)
 //#define	ROI_WIDTH		(DEFAULT_WIDTH>>2)	//(160)
 //#define	ROI_HEIGHT		(DEFAULT_HEIGHT/3)	//(180)
 //#define ROI_Y_OFFSET	(90)/(480/DEFAULT_HEIGHT)
@@ -659,7 +661,8 @@ int spectraAnalysis(IplImage* framecopy, CvScalar roi_rgb, float *pr, float *rr)
 	rgb[1]=roi_rgb.val[1];
 	rgb[2]=roi_rgb.val[2];
 	//dsp_process(rgb);
-	if(!dsp_process_sync(rgb, 50.0f, 160.0f)){
+	//if(!dsp_process_sync(rgb, MIN_HR_BPM, MAX_HR_BPM)){
+	if(!dsp_process(rgb, MIN_HR_BPM, MAX_HR_BPM)){
 		getPPG(ppg, MAX_CHANNELS);//get the result of R,G,B channel
 		// ppg[] LSB = B:(bpm, mag) G:(bpm, mag) R:(bpm,mag)
 		sprintf(tempstr,"[b:%5.1f/%6.1f][g:%5.1f/%6.1f][r:%5.1f/%6.1f]",
