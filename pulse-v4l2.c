@@ -1449,14 +1449,15 @@ static void usage(FILE *fp, int argc, char **argv)
 		 "-F | --fps           fps [%i]\n"
 		 "-s | --steps         steps in seconds[%i]\n"
 		 "-a | --async         dsp is running in async mode:[%d]\n"
+		 "-k | --rgbMask       enable rgb channel Mask:[0x%x]\n"
 		 "-v | --verbose       Verbose output\n"
 		 "",
 		 argv[0], frame_count, dev_name, getErrorLevel(),
 			getMinWinThr(), getMaxWinThr(), getRADICAL(), getSampleWindow(), getDSPFPS(),
-			getStepping(), getAsync());
+			getStepping(), getAsync(), getChannelMASK());
 }
 
-static const char short_options[] = "a:c:d:D:e:Ef:F:hi:Im:M:o:prR:s:uvw:";
+static const char short_options[] = "a:c:d:D:e:Ef:F:hi:Ik:m:M:o:prR:s:uvw:";
 
 static const struct option
 long_options[] = {
@@ -1471,6 +1472,7 @@ long_options[] = {
 	{ "fps",  		required_argument, NULL, 'F' },
 	{ "samplefile",required_argument, NULL, 'i' },
 	{ "InfraRed",no_argument, NULL, 'I' },
+	{ "rgbMask", required_argument, NULL, 'k' },
 	{ "min",		required_argument, NULL, 'm' },
 	{ "max",		required_argument, NULL, 'M' },
 	{ "output", 	required_argument, NULL, 'o' },
@@ -1547,6 +1549,12 @@ static int option(int argc, char **argv)
 		case 'F':
 			errno = 0;
 			setDSPFPS( g_curFPS = strtol(optarg, NULL, 0) );
+			if (errno)
+				errno_exit(optarg);
+			break;
+		case 'k':
+			errno = 0;
+			setChannelMASK( strtoul(optarg, NULL, 0) );
 			if (errno)
 				errno_exit(optarg);
 			break;
@@ -1640,6 +1648,7 @@ int main(int argc, char **argv)
 		exit(EXIT_FAILURE);
 	}
 	init_device();
+	//setChannelMASK(G_CHANNEL_MASK);//only green is used!
 
 	cvNamedWindow(windowname,CV_WINDOW_AUTOSIZE);
 	startCapturing();
