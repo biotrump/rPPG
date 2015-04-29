@@ -47,7 +47,7 @@ The stable fps can only occur in the low frame rate. Higher fps>15 may not be st
 */
 //#define FORCED_FPS		(9)	//fps9 or fps10 are the most stable fps.
 static int g_curFPS=10;	//default is 10fps
-
+static int async=0;
 #define CLEAR(x) memset(&(x), 0, sizeof(x))
 
 enum io_method {
@@ -1448,20 +1448,21 @@ static void usage(FILE *fp, int argc, char **argv)
 		 "-f | --format        Force format to 640x480 YUYV\n"
 		 "-F | --fps           fps [%i]\n"
 		 "-s | --steps         steps in seconds[%i]\n"
+		 "-a | --async         dsp is running in async mode:[%d]\n"
 		 "-v | --verbose       Verbose output\n"
 		 "",
 		 argv[0], frame_count, dev_name, getErrorLevel(),
-			0, 0,0,0,0,0);
-		//getMinSampleTime(), getMaxSampleTime(), getRADICAL(),
-		//getSampleWindow(),getDSPFPS(),getStepping());
+			getMinWinThr(), getMaxWinThr(), getRADICAL(), getSampleWindow(), getDSPFPS(),
+			getStepping(), getAsync());
 }
 
-static const char short_options[] = "c:d:D:e:Ef:F:hi:Im:M:o:prR:s:uvw:";
+static const char short_options[] = "a:c:d:D:e:Ef:F:hi:Im:M:o:prR:s:uvw:";
 
 static const struct option
 long_options[] = {
 	{ "help",   no_argument,       NULL, 'h' },
 	{ "count",  required_argument, NULL, 'c' },
+	{ "async",  required_argument, NULL, 'a' },
 	{ "device", required_argument, NULL, 'd' },
 	{ "windim", required_argument, NULL, 'D' },
 	{ "errorlevel", required_argument, NULL, 'e' },
@@ -1477,7 +1478,7 @@ long_options[] = {
 	{ "mmap",   no_argument,       NULL, 'p' },
 	{ "read",   no_argument,       NULL, 'r' },
 	{ "RADICAL", 	required_argument, NULL, 'R' },
-	{ "step",  		required_argument, NULL, 's' },
+	{ "steps",  		required_argument, NULL, 's' },
 	{ "userp",  no_argument,       NULL, 'u' },
 	{ "verbose", 	no_argument,       NULL, 'v' },
 	{ "window",		required_argument, NULL, 'w' },
@@ -1502,6 +1503,12 @@ static int option(int argc, char **argv)
 
 		switch (c) {
 		case 0: /* getopt_long() flag */
+			break;
+		case 'a':
+			errno = 0;
+			async = strtol(optarg, NULL, 0);
+			if (errno)
+				errno_exit(optarg);
 			break;
 		case 'c':
 			errno = 0;
@@ -1587,7 +1594,7 @@ static int option(int argc, char **argv)
 		case 'R':
 			errno = 0;
 			setRADICAL(strtol(optarg, NULL, 0));
-			printf("DSP RAIDCAL [%d].\n",getRADICAL());
+			pr_debug(DSP_DEBUG, "DSP RAIDCAL [%d].\n",getRADICAL());
 			if (errno)
 				errno_exit(optarg);
 			break;
@@ -1628,7 +1635,7 @@ int main(int argc, char **argv)
 		dsp_step, min_win, max_win);
 
 	//10fps, step=1, minthr=8s, maxthr=60, 3 channels, synchornous
-	if(dsp_init(g_curFPS, dsp_step, min_win, max_win, 3, 0)){
+	if(dsp_init(g_curFPS, dsp_step, min_win, max_win, 3, async)){
 		pr_debug(DSP_DEBUG, "DSP init failed!!!\n");
 		exit(EXIT_FAILURE);
 	}
@@ -1645,6 +1652,5 @@ int main(int argc, char **argv)
 	close_device();
 	dsp_deinit();//!!! waiting for dsp thread to quit!!!
 
-	//fprintf(stderr, "\n");
 	return 0;
 }
