@@ -8,6 +8,16 @@
  *
  *	V4L2 API, Draft 0.20
  *		available at: http://v4l2spec.bytesex.org/
+ *
+ * YUV422 : https://www.ptgrey.com/KB/10092
+ * The YUV422 : Y is luminance, gray scale!
+ * data format shares U and V values between two pixels.
+ * As a result, these values are transmitted to the PC image buffer
+ * only once for every two pixels, resulting in an average transmission
+ * rate of 16 bits per pixel.
+ * The bytes are ordered in the image in the following manner:
+ * U0 Y0 V0 Y1 U2 Y2 V2 Y3 U4 Y4 V4…
+ * Y0, Y1, Y2 ... can be extracted every two-byte in high byte
  */
 
 #include <stdio.h>
