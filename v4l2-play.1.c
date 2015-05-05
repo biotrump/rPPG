@@ -7,17 +7,7 @@
  * 	http://linuxtv.org/downloads/v4l-dvb-apis/capture-example.html
  *
  *	V4L2 API, Draft 0.20
- *		available at: http://v4l2spec.bytesex.org/
- *
- * YUV422 : https://www.ptgrey.com/KB/10092
- * The YUV422 : Y is luminance, gray scale!
- * data format shares U and V values between two pixels.
- * As a result, these values are transmitted to the PC image buffer
- * only once for every two pixels, resulting in an average transmission
- * rate of 16 bits per pixel.
- * The bytes are ordered in the image in the following manner:
- * U0 Y0 V0 Y1 U2 Y2 V2 Y3 U4 Y4 V4…
- * Y0, Y1, Y2 ... can be extracted every two-byte in high byte
+ *	available at: http://v4l2spec.bytesex.org/
  */
 
 #include <stdio.h>
@@ -41,23 +31,20 @@
 #include <opencv2/imgproc/imgproc.hpp>
 #include "dsp-lib.h"
 
-#define DEFAULT_WIDTH  640
-#define DEFAULT_HEIGHT 480
-#define FORCED_FORMAT V4L2_PIX_FMT_YUYV	//V4L2_PIX_FMT_MJPEG
-#define FORCED_FIELD  V4L2_FIELD_ANY
+#define FORCED_WIDTH  	640
+#define FORCED_HEIGHT 	480
+#define FORCED_FORMAT 	V4L2_PIX_FMT_YUYV	//V4L2_PIX_FMT_MJPEG
+#define FORCED_FIELD  	V4L2_FIELD_ANY
 #define	ROI_BORDERW		(4)
-#define	MIN_HR_BPM	(45.0f)
-#define	MAX_HR_BPM	(180.0f)
-//#define	ROI_WIDTH		(DEFAULT_WIDTH>>2)	//(160)
-//#define	ROI_HEIGHT		(DEFAULT_HEIGHT/3)	//(180)
-//#define ROI_Y_OFFSET	(90)/(480/DEFAULT_HEIGHT)
+//#define	ROI_WIDTH		(FORCED_WIDTH>>2)	//(160)
+//#define	ROI_HEIGHT		(FORCED_HEIGHT/3)	//(180)
+//#define ROI_Y_OFFSET	(90)/(480/FORCED_HEIGHT)
 
 /*http://forum.processing.org/one/topic/webcam-with-stable-framerate-25fps-on-high-resolution.html
 The stable fps can only occur in the low frame rate. Higher fps>15 may not be stable.
 */
 //#define FORCED_FPS		(9)	//fps9 or fps10 are the most stable fps.
-static int g_curFPS=10;	//default is 10fps
-static int async=0;
+
 #define CLEAR(x) memset(&(x), 0, sizeof(x))
 
 enum io_method {
@@ -73,7 +60,7 @@ struct buffer {
 
 static char            *dev_name;
 static enum io_method   v4l2_io = IO_METHOD_MMAP;
-static int              fd = -1;
+static int              g_fd = -1;
 struct buffer          *buffers;
 static unsigned int     n_buffers;
 static int				out_buf;
@@ -83,15 +70,11 @@ static int				enableInfraRed=0;
 static char 			*windowname="v4l2 capture";
 static unsigned 		v4l2_pix_fmt=FORCED_FORMAT;
 
-static int 				win_width = DEFAULT_WIDTH;
-static int 				win_height = DEFAULT_HEIGHT;
+static int 				win_width = FORCED_WIDTH;
+static int 				win_height = FORCED_HEIGHT;
 static int				roi_WIDTH;
 static int				roi_HEIGHT;
 static int				roi_Y_OFFSET;
-static int		min_win=4, max_win=8, dsp_step=1;//unit second
-
-extern int pico_facedetection(IplImage* frame, int draw, int print, int maxdetect,
-	float *frs, float *fcs, float *fss);
 
 static void errno_exit(const char *s)
 {
@@ -113,7 +96,7 @@ static int xioctl(int fh, int request, void *arg)
 int QueryCap(int fd, struct v4l2_capability *pcaps)
 {
     struct v4l2_capability caps = {0};
-    if (-1 == xioctl(fd, VIDIOC_QUERYCAP, pcaps)){
+    if (-1 == xioctl(g_fd, VIDIOC_QUERYCAP, pcaps)){
         perror("Querying Capabilities");
         return 1;
     }
@@ -133,7 +116,7 @@ int GetAutoWhiteBalance(int fd)
 {
 	struct v4l2_control ctrl ={0};
 	ctrl.id = V4L2_CID_AUTO_WHITE_BALANCE;
-	if (-1 == xioctl(fd, VIDIOC_G_CTRL, &ctrl)){
+	if (-1 == xioctl(g_fd, VIDIOC_G_CTRL, &ctrl)){
 		perror("getting V4L2_CID_AUTO_WHITE_BALANCE");
 	}
 //	printf("V4L2_CID_AUTO_WHITE_BALANCE = 0x%x\n",ctrl.value );
@@ -147,7 +130,7 @@ int SetAutoWhiteBalance(int fd, int enable)
 	pr_debug(DSP_DEBUG,"%s:\n", __func__);
 	ctrl.id = V4L2_CID_AUTO_WHITE_BALANCE;
 	ctrl.value = enable;
-	if (-1 == xioctl(fd, VIDIOC_S_CTRL, &ctrl)){
+	if (-1 == xioctl(g_fd, VIDIOC_S_CTRL, &ctrl)){
 		perror("setting V4L2_CID_AUTO_WHITE_BALANCE");
 	}
 //	printf("V4L2_CID_AUTO_WHITE_BALANCE = (0x%x -> 0x%x)\n",enable, GetAutoWhiteBalance(fd) );
@@ -238,7 +221,7 @@ int SetAutoExposure(int fd, int type)
    	ctrl.value = type;
    	pr_debug(DSP_INFO,"SetAutoExposure=");
    	autoExposureType(type);
-   	if (-1 == xioctl(fd,VIDIOC_S_CTRL,&ctrl)) {
+   	if (-1 == xioctl(g_fd,VIDIOC_S_CTRL,&ctrl)) {
       perror("setting V4L2_CID_EXPOSURE_AUTO");
       return -1;
 	}
@@ -249,7 +232,7 @@ int GetAutoExposure(int fd)
 {
 	struct v4l2_control ctrl ={0};
 	ctrl.id = V4L2_CID_EXPOSURE_AUTO;
-	if (-1 == xioctl(fd, VIDIOC_G_CTRL, &ctrl)){
+	if (-1 == xioctl(g_fd, VIDIOC_G_CTRL, &ctrl)){
 		perror("getting V4L2_CID_EXPOSURE_AUTO");
 		return -1;
 	}
@@ -263,7 +246,7 @@ int SetAutoExposureAutoPriority(int fd, int p)
 	struct v4l2_control ctrl ={0};
 	ctrl.id = V4L2_CID_EXPOSURE_AUTO_PRIORITY ;
    	ctrl.value = p;
-   	if (-1 == xioctl(fd,VIDIOC_S_CTRL,&ctrl)) {
+   	if (-1 == xioctl(g_fd,VIDIOC_S_CTRL,&ctrl)) {
       perror("setting V4L2_CID_EXPOSURE_AUTO_PRIORITY");
       return -1;
 	}
@@ -274,7 +257,7 @@ int GetAutoExposureAutoPriority(int fd)
 {
 	struct v4l2_control ctrl ={0};
 	ctrl.id = V4L2_CID_EXPOSURE_AUTO_PRIORITY ;
-   	if (-1 == xioctl(fd,VIDIOC_G_CTRL,&ctrl)) {
+   	if (-1 == xioctl(g_fd,VIDIOC_G_CTRL,&ctrl)) {
       perror("getting V4L2_CID_EXPOSURE_AUTO_PRIORITY");
       return -1;
 	}
@@ -298,7 +281,7 @@ int SetManualExposure(int fd, int val)
 
 	ctrl.id = V4L2_CID_EXPOSURE_ABSOLUTE;
    	ctrl.value = val;
-   	if (-1 == xioctl(fd,VIDIOC_S_CTRL,&ctrl)) {
+   	if (-1 == xioctl(g_fd,VIDIOC_S_CTRL,&ctrl)) {
       perror("setting V4L2_CID_EXPOSURE_ABSOLUTE");
       return -1;
 	}
@@ -314,7 +297,7 @@ int GetManualExposure(int fd)
 	}
 */
 	ctrl.id = V4L2_CID_EXPOSURE_ABSOLUTE;
-   	if (-1 == xioctl(fd,VIDIOC_G_CTRL,&ctrl)) {
+   	if (-1 == xioctl(g_fd,VIDIOC_G_CTRL,&ctrl)) {
       perror("getting V4L2_EXPOSURE_MANUAL");
       return -1;
 	}
@@ -330,7 +313,7 @@ int EnumVideoFMT(int fd)
     char fourcc[5] = {0};
     char c, e;
     printf("\n  FMT : CE Desc\n--------------------\n");
-    while (0 == xioctl(fd, VIDIOC_ENUM_FMT, &fmtdesc))
+    while (0 == xioctl(g_fd, VIDIOC_ENUM_FMT, &fmtdesc))
     {
         strncpy(fourcc, (char *)&fmtdesc.pixelformat, 4);
         if (fmtdesc.pixelformat == V4L2_PIX_FMT_SGRBG10)
@@ -349,7 +332,7 @@ int GetVideoFMT(int fd, struct v4l2_format *pfmt)
     char fourcc[5] = {0};
     pfmt->type = V4L2_BUF_TYPE_VIDEO_CAPTURE; //V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
 	for(i = 0; i < 20; i ++){
-		if (-1 == xioctl(fd, VIDIOC_G_FMT, pfmt))
+		if (-1 == xioctl(g_fd, VIDIOC_G_FMT, pfmt))
 		{
 		    perror("getting Pixel Format");
 			usleep(5000);
@@ -391,7 +374,7 @@ int SetVideoFMT(int fd, struct v4l2_format fmt)
 //    fmt.fmt.pix.pixelformat = pixelformat;//V4L2_PIX_FMT_YUYV;
 //    fmt.fmt.pix.field = V4L2_FIELD_NONE;
 //	for(i = 0; i < 20; i ++){
-		if (-1 == xioctl(fd, VIDIOC_S_FMT, &fmt))
+		if (-1 == xioctl(g_fd, VIDIOC_S_FMT, &fmt))
 		{
 		    perror("Setting Pixel Format");
 			//usleep(10000);
@@ -422,7 +405,7 @@ int SetFPSParam(int fd, uint32_t fps)
     param.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     param.parm.capture.timeperframe.numerator = 1;
     param.parm.capture.timeperframe.denominator = fps;
-	if (-1 == xioctl(fd, VIDIOC_S_PARM, &param)){
+	if (-1 == xioctl(g_fd, VIDIOC_S_PARM, &param)){
 		perror("unable to change device parameters");
 		return -1;
 	}
@@ -454,7 +437,7 @@ uint32_t GetFPSParam(int fd, double fps, struct v4l2_frmivalenum *pfrmival)
     frmival.height = height;*/
     memset(fpss,0,sizeof(fpss));
     while(pfrmival->index < 10){
-	    if (-1 == xioctl(fd, VIDIOC_ENUM_FRAMEINTERVALS, pfrmival)){
+	    if (-1 == xioctl(g_fd, VIDIOC_ENUM_FRAMEINTERVALS, pfrmival)){
 		    perror("getting VIDIOC_ENUM_FRAMEINTERVALS");
 		    break;
 		}
@@ -500,7 +483,7 @@ int PrintFrameInterval(int fd, unsigned int fmt, unsigned int width, unsigned in
     frmival.width = width;
     frmival.height = height;
     while(1){
-	    if (-1 == xioctl(fd, VIDIOC_ENUM_FRAMEINTERVALS, &frmival)){
+	    if (-1 == xioctl(g_fd, VIDIOC_ENUM_FRAMEINTERVALS, &frmival)){
 		    perror("getting VIDIOC_ENUM_FRAMEINTERVALS");
 		    return -1;
 		}
@@ -527,7 +510,7 @@ int EnumFrameSize(int fd, unsigned int format)
     frmsize.pixel_format = format; //V4L2_PIX_FMT_JPEG;
 	pr_debug(DSP_DEBUG,"\n+EnumFrameSize supporting list:\n");
     while(1){
-	    if (-1 == xioctl(fd, VIDIOC_ENUM_FRAMESIZES, &frmsize)){
+	    if (-1 == xioctl(g_fd, VIDIOC_ENUM_FRAMESIZES, &frmsize)){
 		    perror("getting VIDIOC_ENUM_FRAMESIZES");//enumerate is done!
 		    return -1;
 		}
@@ -600,9 +583,7 @@ int extra_cam_setting(int camfd)
 	struct v4l2_format fmt;
 	struct v4l2_frmivalenum frmival;
 	uint32_t fps;
-
-	pr_debug(DSP_INFO,"%s:\n",__func__);
-
+	printf("+extra_cam_setting\n");
 	print_caps(camfd);
 	GetVideoFMT(camfd, &fmt);
 	fmt.fmt.pix.width=win_width;
@@ -622,13 +603,11 @@ int extra_cam_setting(int camfd)
 	SetFPSParam(camfd, fps);
 	setDSPFPS(fps);	//set the proper fps by the camera's capabilities
 
-	SetAutoWhiteBalance(camfd, 0);//disable white balance
-#if 0
+	SetAutoWhiteBalance(camfd, 0);
 	SetAutoExposure(camfd, V4L2_EXPOSURE_AUTO);
 	SetAutoExposureAutoPriority(camfd,0);
-
 	printf("-extra_cam_setting\n");
-
+#if 0
 	SetAutoExposure(camfd, /*V4L2_EXPOSURE_MANUAL ,*/ V4L2_EXPOSURE_APERTURE_PRIORITY  );
 	SetAutoExposureAutoPriority(camfd,0);
 	printf("AutoPriority=%d\n",GetAutoExposureAutoPriority(camfd));
@@ -660,79 +639,80 @@ void cvPrintf(IplImage* img, char *text, CvPoint TextPosition, CvFont Font1,
   //cvPutText(img, text, TextPosition, &Font1, CV_RGB(0,255,0));
 }
 
-int spectraAnalysis(IplImage* framecopy, CvScalar roi_rgb, float *pr, float *rr)
+int spectraAnalysis(IplImage* framecopy, CvScalar rgb, float *pr, float *rr)
 {
 	int n=0;
+#if 1
+	*pr=80.0f;
+	n=1;
+#else
+	int i
+	pr_debug(DSP_INFO,"+%s:\n", __func__);
+	//PCircularQueue pq[]={cq, cqLong};
+	PCircularQueue pq[]={cq};
+	int win_samples[]={getSampleWindow()*getDSPFPS(), getMaxSampleTime() * getDSPFPS()};
+	//insert to cq and process it
+	for(i = 0; i < sizeof(pq)/sizeof(PCircularQueue); i ++){
+		if(cqInsert(pq[i], (PElemType)&rgb)){
+			pr_debug(DSP_DEBUG,"!!!!queue[%d] is full and is wating...\n", i);
+		}else{
+			int j;
+			int steps=getStepping()*getDSPFPS();
+			pr_debug(DSP_INFO,"cq[%d]: %d\n",i, cqUsedSize(pq[i]));
+			//indicator to count bpm
+			char hrtext[20];
+			sprintf(hrtext,"[%d/%d]", cqUsedSize(pq[i])+1,cqSize(pq[i]));
+			cvPrintf(framecopy, hrtext, cvPoint(200,90), cvFont(2.0,1.0), CV_RGB(0,255,0));
 
-	float rgb[3], ppg[MAX_CHANNELS*2];
-	int steps=getStepping()*getDSPFPS();
-	char tempstr[80];
-	sprintf(tempstr,"[%d/%d]", getDSPCQ_Size(), getNextStepping());
-	cvPrintf(framecopy, tempstr, cvPoint(200,90), cvFont(2.0,1.0), CV_RGB(0,255,0));
-
-	rgb[0]=roi_rgb.val[0];
-	rgb[1]=roi_rgb.val[1];
-	rgb[2]=roi_rgb.val[2];
-	//dsp_process(rgb);
-	//if(!dsp_process_sync(rgb, MIN_HR_BPM, MAX_HR_BPM)){
-	if(!dsp_process(rgb, MIN_HR_BPM, MAX_HR_BPM)){
-		getPPG(ppg, MAX_CHANNELS);//get the result of R,G,B channel
-		// ppg[] LSB = B:(bpm, mag) G:(bpm, mag) R:(bpm,mag)
-		sprintf(tempstr,"[b:%5.1f/%6.1f][g:%5.1f/%6.1f][r:%5.1f/%6.1f]",
-				ppg[0],ppg[1],ppg[2],ppg[3],ppg[4],ppg[5]);
-		cvPrintf(framecopy, tempstr, cvPoint(200,60), cvFont(1.0,1.0), CV_RGB(0,255,0));
-		n=3;
-		*pr = ppg[2];
+			if(cqFull(pq[i])){
+				int row,col;
+				CvMat *rawTrace;
+				//read queue to rawtrace
+				pr_debug(DSP_DEBUG,"###cq[%d] is full : %d, process it\n", i,
+						 cqUsedSize(pq[i]));
+				pr_debug(DSP_INFO,"N=%d\n", win_samples[i]);
+				//3 rows (BGR) * N
+				rawTrace = cvCreateMat(MAX_CHANNELS, win_samples[i], RAW_ELEMENT_TYPE);
+				if(rawTrace){
+					CvScalar spectra[MAX_SPECTRAS];//(magnitude, freq, channel)
+					cqClone(pq[i], rawTrace);
+					n=rawTraceSpectra(rawTrace, spectra);
+					//clear out steps from cq and waits for when cq is full.
+					for(j=0;j<steps;j++) cqDelete(pq[i], NULL);
+					pr_debug(DSP_INFO,"[%d] frames are cleared out: %d left\n", steps,
+							cqUsedSize(pq[i]));
+					if(n && pr)
+					  *pr=spectra[0].val[1];
+					else n=-1;//no valid spectra is found!
+					for(j=0; j<n;j++) {
+						pr_debug(DSP_DEBUG,"\n***[%d: %.1fbpm (%.3fhz), mag=%.3f,"
+								 "ch=%.0f]\n\n",
+								 j, spectra[j].val[1]*60.0,spectra[j].val[1],
+								spectra[j].val[0],spectra[j].val[2]);
+					}
+					cvReleaseMat(&rawTrace);
+				}
+			}
+		}
 	}
+  pr_debug(DSP_INFO,"-%s:n=%d, freq=%.3f\n", __func__,n,pr?*pr:0);
+#endif
   return n;
-}
-
-/*
-openCV roi mean
-*/
-static void roi_mean(IplImage *img, CvRect roi, float *m)
-{
-	int i,j;
-	float ra=0.0,r=0.0,g=0.0,b=0.0;
-
-	pr_debug(DSP_INFO,"+%s:(x=%d,y=%d,w=%d,h=%d)\n", __func__, roi.x,roi.y,
-			 roi.width,roi.height);
-
-	/* averaging ROI's pixel*/
-	for(i=roi.y;i< (roi.y+roi.height);i++)
-    {
-        for(j=roi.x*img->nChannels;j< (roi.x + roi.width) * img->nChannels;j+=img->nChannels)
-        {
-			/* B,G,R are packed in 3 bytes as a pixel
-			 * the image is height(row) * width(column)
-			 */
-            b += (unsigned char)img->imageData[i*img->widthStep+j];
-            g += (unsigned char)img->imageData[i*img->widthStep+j+1];
-            r += (unsigned char)img->imageData[i*img->widthStep+j+2];
-        }
-    }
-    ra=(roi.width*roi.height);
-	m[0]=b/ra;
-	m[1]=g/ra;
-	m[2]=r/ra;
-
-	pr_debug(DSP_INFO,"-%s:(b,g,r)=%.4f %.4f %.4f\n",__func__,
-			 m[0],m[1],m[2]);
 }
 
 /*
 p is a YUYV 422 format, so 640x480x16bits = 61440 bytes
 */
-static CvScalar processFrame(const void *p, int size)
+static void processFrame(const void *p, int size)
 {
-	IplImage* framecopy=NULL, *Ycopy=NULL;
+	IplImage* framecopy=NULL;
 	static uint64_t ut1;
 	uint64_t ut2;
 	struct timeval pt2;
-	float m_roi[MAX_CHANNELS]={0.0};
-	//CvRect sroi;
-	RECT roi;
-	//pr_debug(DSP_INFO,"%s: size=0x%x\n", __func__, size);
+	pr_debug(DSP_INFO,"%s: size=0x%x\n", __func__, size);
+	float m_roi[3]={0.0};
+	CvRect sroi;
+
 	if(V4L2_PIX_FMT_MJPEG == v4l2_pix_fmt){
 		IplImage* frame;
 		CvMat cvmat = cvMat(win_height, win_width, CV_8UC3, (void*)p);//MJPEG buffer p
@@ -758,95 +738,54 @@ static CvScalar processFrame(const void *p, int size)
 		//		printf("size too small\n");
 		//		return ;
 		//	}
-		int nd=0;
-		float rs[4],cs[4],ss[4];
-		framecopy = cvCreateImage(cvSize(win_width, win_height), IPL_DEPTH_8U, 3);
-		Ycopy = cvCreateImage(cvSize(win_width, win_height), IPL_DEPTH_8U, 1);
+		framecopy = cvCreateImage(cvSize(win_width,win_height), IPL_DEPTH_8U, 3);
+
 		if(enableInfraRed)
 			infrared_to_rgb888(win_width,win_height, (unsigned char *)p, framecopy->imageData);
-		else{
-			yuyv_to_rgb24(win_width, win_height, (unsigned char *)p, framecopy->imageData);
-			extractY(win_width, win_height, (unsigned char *)p, Ycopy->imageData);
-		}
-		//process_image(Ycopy, 1, 1);
-		nd=pico_facedetection(Ycopy, 1, 1, 4, rs, cs, ss);
-		printf("*nd=%d\n",nd);
-		//setup a rectangle ROI
-		if(nd){//sqrt(2)=1.414
-			roi_Y_OFFSET =	ss[0]/10;
-			roi_WIDTH = ss[0]/1.414f;
-			roi_HEIGHT = ss[0]/1.414f + roi_Y_OFFSET;
-
-			//the ROI in the image
-			roi.x = cs[0] - roi_WIDTH/2;
-			roi.y = rs[0] - roi_HEIGHT/2 + roi_Y_OFFSET;
-			roi.width = roi_WIDTH;
-			roi.height = roi_HEIGHT ;
-		}else{
-			roi_WIDTH = (win_width>>2);	//160
-			roi_HEIGHT = (win_height/3);	//160
-			roi_Y_OFFSET =	(70);//(DEFAULT_HEIGHT/win_height);
-		}
-		MATRIX img={win_height, win_width, framecopy->imageData };
-		roi.x = (framecopy->width - roi_WIDTH)/2 - 1;
-		roi.y = (framecopy->height - roi_HEIGHT)/2 - 1+ roi_Y_OFFSET;
-		roi.width = roi_WIDTH;
-		roi.height = roi_HEIGHT ;
-
-		roiMean(MAX_CHANNELS, &img, roi, m_roi);
-		//pr_debug(DSP_INFO,"m_roi(%.4f,%.4f,%.4f)\n", m_roi[0],m_roi[1],m_roi[2]);
+		else
+			yuyv_to_rgb24(win_width,win_height, (unsigned char *)p, framecopy->imageData);
+		roi_WIDTH = (win_width>>2);
+		roi_HEIGHT = (win_height/3);
+		roi_Y_OFFSET =	(90)/(480/win_height);
+		sroi.x = (framecopy->width - roi_WIDTH)/2 - 1;
+		sroi.y = (framecopy->height - roi_HEIGHT)/2 - 1+ roi_Y_OFFSET;
+		sroi.width = roi_WIDTH;
+		sroi.height = roi_HEIGHT ;
+		//roi_mean(framecopy, sroi, m_roi);
+		pr_debug(DSP_INFO,"m_roi(%.4f,%.4f,%.4f)\n", m_roi[0],m_roi[1],m_roi[2]);
+		//
+		//draw the bouding ROI on the frame
+		/*cvRectangle(framecopy, cvPoint(sroi.x, sroi.y),
+					cvPoint(sroi.x+sroi.width, sroi.y+sroi.height),
+					CV_RGB(255, 0, 0), ROI_BORDERW,8, 0);*/
 	}
 
-	CvScalar m_rgb=cvScalar(m_roi[0],m_roi[1],m_roi[2], 0.0);
-	char tempstr[40];
-	float pr=0.0;
-	static float valid_pr=0.0;
-	int n= spectraAnalysis(framecopy, m_rgb, &pr, NULL);
-	static CvScalar textColor={100, 100, 100};//B,G,R
-	if(n>0){
-	  //green color
-	  textColor=CV_RGB(0,255,0);
-	  valid_pr=pr;
-	}else if(n < 0) {
-	  //red color, release the cq and reload again!
-	  textColor=CV_RGB(255,0,0);
-	}
-	sprintf(tempstr,"%.1fbpm (%.2fHz)", valid_pr, valid_pr/60.0f);
-	cvPrintf(framecopy, tempstr, cvPoint(200,40), cvFont(2.0,2.5), textColor);
+	char hrtext[40];
 
 	//draw the bouding ROI on the frame
-#if 0
 	cvRectangle(framecopy, cvPoint(sroi.x, sroi.y),
 				cvPoint(sroi.x+sroi.width, sroi.y+sroi.height),
-				textColor, ROI_BORDERW,8, 0);
-#else
-	cvRectangle(framecopy, cvPoint(roi.x, roi.y),
-				cvPoint(roi.x+roi.width, roi.y+roi.height),
-				textColor, ROI_BORDERW,8, 0);
-#endif
+				CV_RGB(255,0,0), ROI_BORDERW,8, 0);
 	gettimeofday(&pt2, NULL);
 	ut2 = (pt2.tv_sec * 1000000) + pt2.tv_usec;
 	if( ut1 && (ut2 > ut1)){
+//			printf("\npt=%lu us, fps=%.1f\n", ut2-ut1, 1000000.0/(ut2-ut1));
 	  pr_debug(DSP_INFO,"fps=%.0f\n", 1000000.0/(ut2-ut1));
-	  sprintf(tempstr,"fps:%.1f", 1000000.0/(ut2-ut1));
-	  cvPrintf(framecopy, tempstr, cvPoint(20,50), cvFont(1.5,1.0), CV_RGB(0,0,255));
+	  sprintf(hrtext,"fps:%.1f", 1000000.0/(ut2-ut1));
+	  cvPrintf(framecopy, hrtext, cvPoint(20,50), cvFont(1.5,1.0), CV_RGB(0,0,255));
 	}
 	ut1=ut2;
 
-	sprintf(tempstr,"press 'q' to quit...");
-	cvPrintf(framecopy, tempstr, cvPoint(10,460),cvFont(1.5,1.0), CV_RGB(255,255, 255));
+	sprintf(hrtext,"press 'q' to quit...");
+	cvPrintf(framecopy, hrtext, cvPoint(10,460),cvFont(1.5,1.0), CV_RGB(255,255, 255));
 
 	cvShowImage(windowname, framecopy);
 
 	if(framecopy)
 	  cvReleaseImage(&framecopy);
 
-	return m_rgb;
 }
 
-/*
- * IO_METHOD_MMAP://!!!default method!!!
- */
 static int readFrame(void)
 {
 	struct v4l2_buffer buf;
@@ -857,7 +796,7 @@ static int readFrame(void)
 
 	switch (v4l2_io) {
 	case IO_METHOD_READ:
-		if (-1 == read(fd, buffers[0].start, buffers[0].length)) {
+		if (-1 == read(g_fd, buffers[0].start, buffers[0].length)) {
 			switch (errno) {
 			case EAGAIN:
 				return 0;
@@ -872,7 +811,7 @@ static int readFrame(void)
 			}
 		}
 
-		m_rgb=processFrame(buffers[0].start, buffers[0].length);
+		processFrame(buffers[0].start, buffers[0].length);
 		break;
 
 	case IO_METHOD_MMAP://!!!default method!!!
@@ -881,7 +820,7 @@ static int readFrame(void)
 		buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
 		buf.memory = V4L2_MEMORY_MMAP;
 
-		if (-1 == xioctl(fd, VIDIOC_DQBUF, &buf)) {
+		if (-1 == xioctl(g_fd, VIDIOC_DQBUF, &buf)) {
 			switch (errno) {
 			case EAGAIN:
 				return 0;
@@ -898,9 +837,9 @@ static int readFrame(void)
 
 		assert(buf.index < n_buffers);
 
-		m_rgb=processFrame(buffers[buf.index].start, buf.bytesused);
+		processFrame(buffers[buf.index].start, buf.bytesused);
 
-		if (-1 == xioctl(fd, VIDIOC_QBUF, &buf))
+		if (-1 == xioctl(g_fd, VIDIOC_QBUF, &buf))
 			errno_exit("VIDIOC_QBUF");
 		break;
 
@@ -910,7 +849,7 @@ static int readFrame(void)
 		buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
 		buf.memory = V4L2_MEMORY_USERPTR;
 
-		if (-1 == xioctl(fd, VIDIOC_DQBUF, &buf)) {
+		if (-1 == xioctl(g_fd, VIDIOC_DQBUF, &buf)) {
 			switch (errno) {
 			case EAGAIN:
 				return 0;
@@ -932,9 +871,9 @@ static int readFrame(void)
 
 		assert(i < n_buffers);
 
-		m_rgb = processFrame((void *)buf.m.userptr, buf.bytesused);
+		processFrame((void *)buf.m.userptr, buf.bytesused);
 
-		if (-1 == xioctl(fd, VIDIOC_QBUF, &buf))
+		if (-1 == xioctl(g_fd, VIDIOC_QBUF, &buf))
 			errno_exit("VIDIOC_QBUF");
 		break;
 	}
@@ -948,8 +887,8 @@ static void captureVideo(void)
 	char ch;
 	pr_debug(DSP_INFO,"%s:\n", __func__);
 
-	pr_debug(DSP_DEBUG,"win_size=%ds, fps=%d\n", getSampleWindow(),getDSPFPS());
-
+	pr_debug(DSP_DEBUG,"win_size=%ds, fps=%d\n", getSampleWindow(), getDSPFPS());
+	exit(1);
 	count = frame_count?frame_count:0xffffffff;
 	while (count-- > 0) {
 		for (;;) {
@@ -958,13 +897,13 @@ static void captureVideo(void)
 			int r;
 
 			FD_ZERO(&fds);
-			FD_SET(fd, &fds);
+			FD_SET(g_fd, &fds);
 
 			/* Timeout. */
 			tv.tv_sec = 2;
 			tv.tv_usec = 0;
 
-			r = select(fd + 1, &fds, NULL, NULL, &tv);
+			r = select(g_fd + 1, &fds, NULL, NULL, &tv);
 
 			if (-1 == r) {
 				if (EINTR == errno)
@@ -986,15 +925,20 @@ static void captureVideo(void)
 		}
 	}
 exit:;
+
 }
 
-static void stopCapturing(void)
+/*
+ * V4L2_BUF_TYPE_VIDEO_CAPTURE, VIDIOC_STREAMOFF to stop v4l2 video capture
+ * IO_METHOD_MMAP : V4L2_MEMORY_MMAP is the default capture method
+ */
+static void stopCapturing(enum io_method io)
 {
 	enum v4l2_buf_type type;
 
 	pr_debug(DSP_INFO,"%s:\n", __func__);
 
-	switch (v4l2_io) {
+	switch (io) {
 	case IO_METHOD_READ:
 		/* Nothing to do. */
 		break;
@@ -1002,13 +946,17 @@ static void stopCapturing(void)
 	case IO_METHOD_MMAP:
 	case IO_METHOD_USERPTR:
 		type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-		if (-1 == xioctl(fd, VIDIOC_STREAMOFF, &type))
+		if (-1 == xioctl(g_fd, VIDIOC_STREAMOFF, &type))
 			errno_exit("VIDIOC_STREAMOFF");
 		break;
 	}
 }
 
-static void startCapturing(void)
+/*
+ * V4L2_BUF_TYPE_VIDEO_CAPTURE, VIDIOC_STREAMON to start v4l2 video capture
+ * IO_METHOD_MMAP : V4L2_MEMORY_MMAP is the default capture method
+ */
+static void startCapturing(enum io_method io)
 {
 	unsigned int i;
 	enum v4l2_buf_type type;
@@ -1017,7 +965,7 @@ static void startCapturing(void)
 	pr_debug(DSP_INFO,"%s:\n", __func__);
 	pr_debug(DSP_INFO,"\tn_buffers: %d\n", n_buffers);
 
-	switch (v4l2_io) {
+	switch ( io) {
 	case IO_METHOD_READ:
 		/* Nothing to do. */
 		break;
@@ -1035,7 +983,7 @@ static void startCapturing(void)
 
 			pr_debug(DSP_INFO,"\tbuf.index: %d\n", buf.index);
 
-			err == xioctl(fd, VIDIOC_QBUF, &buf);
+			err == xioctl(g_fd, VIDIOC_QBUF, &buf);
 			pr_debug(DSP_INFO,"\terr: %d\n", err);
 
 			if (-1 == err)
@@ -1046,7 +994,7 @@ static void startCapturing(void)
 
 		pr_debug(DSP_INFO,"Before STREAMON\n");
 		type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-		if (-1 == xioctl(fd, VIDIOC_STREAMON, &type))
+		if (-1 == xioctl(g_fd, VIDIOC_STREAMON, &type))
 			errno_exit("VIDIOC_STREAMON");
 		pr_debug(DSP_INFO,"After STREAMON\n");
 		break;
@@ -1062,23 +1010,23 @@ static void startCapturing(void)
 			buf.m.userptr = (unsigned long)buffers[i].start;
 			buf.length = buffers[i].length;
 
-			if (-1 == xioctl(fd, VIDIOC_QBUF, &buf))
+			if (-1 == xioctl(g_fd, VIDIOC_QBUF, &buf))
 				errno_exit("VIDIOC_QBUF");
 		}
 		type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-		if (-1 == xioctl(fd, VIDIOC_STREAMON, &type))
+		if (-1 == xioctl(g_fd, VIDIOC_STREAMON, &type))
 			errno_exit("VIDIOC_STREAMON");
 		break;
 	}
 }
 
-static void uninit_device(void)
+static void uninit_device(enum io_method io)
 {
 	unsigned int i;
 
 	pr_debug(DSP_INFO,"%s:\n", __func__);
 
-	switch (v4l2_io) {
+	switch ( io) {
 	case IO_METHOD_READ:
 		free(buffers[0].start);
 		break;
@@ -1130,7 +1078,7 @@ static void init_mmap(void)
 	req.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
 	req.memory = V4L2_MEMORY_MMAP;
 
-	if (-1 == xioctl(fd, VIDIOC_REQBUFS, &req)) {
+	if (-1 == xioctl(g_fd, VIDIOC_REQBUFS, &req)) {
 		if (EINVAL == errno) {
 			fprintf(stderr, "%s does not support "
 				 "memory mapping\n", dev_name);
@@ -1166,7 +1114,7 @@ static void init_mmap(void)
 		buf.memory      = V4L2_MEMORY_MMAP;
 		buf.index       = n_buffers;
 
-		if (-1 == xioctl(fd, VIDIOC_QUERYBUF, &buf))
+		if (-1 == xioctl(g_fd, VIDIOC_QUERYBUF, &buf))
 			errno_exit("VIDIOC_QUERYBUF");
 
 		pr_debug(DSP_INFO,"\tbuf.index: %d\n", buf.index);
@@ -1200,7 +1148,7 @@ static void init_mmap(void)
 			      buf.length,
 			      PROT_READ | PROT_WRITE /* required */,
 			      MAP_SHARED /* recommended */,
-			      fd, buf.m.offset);
+			      g_fd, buf.m.offset);
 
 		if (MAP_FAILED == buffers[n_buffers].start)
 			errno_exit("mmap");
@@ -1218,7 +1166,7 @@ static void init_userp(unsigned int buffer_size)
 	req.type   = V4L2_BUF_TYPE_VIDEO_CAPTURE;
 	req.memory = V4L2_MEMORY_USERPTR;
 
-	if (-1 == xioctl(fd, VIDIOC_REQBUFS, &req)) {
+	if (-1 == xioctl(g_fd, VIDIOC_REQBUFS, &req)) {
 		if (EINVAL == errno) {
 			fprintf(stderr, "%s does not support "
 				 "user pointer i/o\n", dev_name);
@@ -1256,7 +1204,7 @@ static void init_device(void)
 
 	pr_debug(DSP_INFO,"%s:\n", __func__);
 
-	if (-1 == xioctl(fd, VIDIOC_QUERYCAP, &cap)) {
+	if (-1 == xioctl(g_fd, VIDIOC_QUERYCAP, &cap)) {
 		if (EINVAL == errno) {
 			fprintf(stderr, "%s is no V4L2 device\n",
 				 dev_name);
@@ -1291,7 +1239,7 @@ static void init_device(void)
 		}
 		break;
 
-	case IO_METHOD_MMAP://defaule method
+	case IO_METHOD_MMAP:
 	case IO_METHOD_USERPTR:
 		if (!(cap.capabilities & V4L2_CAP_STREAMING)) {
 			fprintf(stderr, "%s does not support streaming i/o\n",
@@ -1309,7 +1257,7 @@ static void init_device(void)
 
 	cropcap.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
 
-	if (0 == xioctl(fd, VIDIOC_CROPCAP, &cropcap)) {
+	if (0 == xioctl(g_fd, VIDIOC_CROPCAP, &cropcap)) {
 		pr_debug(DSP_INFO,"\tcropcap.type: %d\n", cropcap.type);
 		pr_debug(DSP_INFO,"\tcropcap.bounds.left: %d\n", cropcap.bounds.left);
 		pr_debug(DSP_INFO,"\tcropcap.bounds.top: %d\n", cropcap.bounds.top);
@@ -1329,7 +1277,7 @@ static void init_device(void)
 		crop.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
 		crop.c = cropcap.defrect; /* reset to default */
 
-		if (-1 == xioctl(fd, VIDIOC_S_CROP, &crop)) {
+		if (-1 == xioctl(g_fd, VIDIOC_S_CROP, &crop)) {
 			switch (errno) {
 			case EINVAL:
 				/* Cropping not supported. */
@@ -1367,13 +1315,13 @@ static void init_device(void)
 		You need to free the buffers before, using VIDIOC_REQBUFS with a buffer
 		count of 0.
 		*/
-		if (-1 == xioctl(fd, VIDIOC_S_FMT, &fmt))
+		if (-1 == xioctl(g_fd, VIDIOC_S_FMT, &fmt))
 			errno_exit("VIDIOC_S_FMT");
 
 		/* Note VIDIOC_S_FMT may change width and height. */
 	} else {
 		/* Preserve original settings as set by v4l2-ctl for example */
-		if (-1 == xioctl(fd, VIDIOC_G_FMT, &fmt))
+		if (-1 == xioctl(g_fd, VIDIOC_G_FMT, &fmt))
 			errno_exit("VIDIOC_G_FMT");
 
 		fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
@@ -1394,7 +1342,7 @@ static void init_device(void)
 	if (fmt.fmt.pix.sizeimage < min)
 		fmt.fmt.pix.sizeimage = min;
 
-	extra_cam_setting(fd);
+	extra_cam_setting(g_fd);
 
 	switch (v4l2_io) {
 	case IO_METHOD_READ:
@@ -1415,10 +1363,10 @@ static void close_device(void)
 {
 	pr_debug(DSP_INFO,"%s:\n", __func__);
 
-	if (-1 == close(fd))
+	if (-1 == close(g_fd))
 		errno_exit("close");
 
-	fd = -1;
+	g_fd = -1;
 }
 
 static void open_device(void)
@@ -1438,9 +1386,9 @@ static void open_device(void)
 		exit(EXIT_FAILURE);
 	}
 
-	fd = open(dev_name, O_RDWR /* required */ | O_NONBLOCK, 0);
+	g_fd = open(dev_name, O_RDWR /* required */ | O_NONBLOCK, 0);
 
-	if (-1 == fd) {
+	if (-1 == g_fd) {
 		fprintf(stderr, "Cannot open '%s': %d, %s\n",
 			 dev_name, errno, strerror(errno));
 		exit(EXIT_FAILURE);
@@ -1473,22 +1421,20 @@ static void usage(FILE *fp, int argc, char **argv)
 		 "-f | --format        Force format to 640x480 YUYV\n"
 		 "-F | --fps           fps [%i]\n"
 		 "-s | --steps         steps in seconds[%i]\n"
-		 "-a | --async         dsp is running in async mode:[%d]\n"
-		 "-k | --rgbMask       enable rgb channel Mask:[0x%x]\n"
 		 "-v | --verbose       Verbose output\n"
 		 "",
 		 argv[0], frame_count, dev_name, getErrorLevel(),
-			getMinWinThr(), getMaxWinThr(), getRADICAL(), getSampleWindow(), getDSPFPS(),
-			getStepping(), getAsync(), getChannelMASK());
+			0, 0,0,0,0,0);
+		//getMinSampleTime(), getMaxSampleTime(), getRADICAL(),
+		//getSampleWindow(),getDSPFPS(),getStepping());
 }
 
-static const char short_options[] = "a:c:d:D:e:Ef:F:hi:Ik:m:M:o:prR:s:uvw:";
+static const char short_options[] = "c:d:D:e:Ef:F:hi:Im:M:o:prR:s:uvw:";
 
 static const struct option
 long_options[] = {
 	{ "help",   no_argument,       NULL, 'h' },
 	{ "count",  required_argument, NULL, 'c' },
-	{ "async",  required_argument, NULL, 'a' },
 	{ "device", required_argument, NULL, 'd' },
 	{ "windim", required_argument, NULL, 'D' },
 	{ "errorlevel", required_argument, NULL, 'e' },
@@ -1497,7 +1443,6 @@ long_options[] = {
 	{ "fps",  		required_argument, NULL, 'F' },
 	{ "samplefile",required_argument, NULL, 'i' },
 	{ "InfraRed",no_argument, NULL, 'I' },
-	{ "rgbMask", required_argument, NULL, 'k' },
 	{ "min",		required_argument, NULL, 'm' },
 	{ "max",		required_argument, NULL, 'M' },
 	{ "output", 	required_argument, NULL, 'o' },
@@ -1505,7 +1450,7 @@ long_options[] = {
 	{ "mmap",   no_argument,       NULL, 'p' },
 	{ "read",   no_argument,       NULL, 'r' },
 	{ "RADICAL", 	required_argument, NULL, 'R' },
-	{ "steps",  		required_argument, NULL, 's' },
+	{ "step",  		required_argument, NULL, 's' },
 	{ "userp",  no_argument,       NULL, 'u' },
 	{ "verbose", 	no_argument,       NULL, 'v' },
 	{ "window",		required_argument, NULL, 'w' },
@@ -1530,12 +1475,6 @@ static int option(int argc, char **argv)
 
 		switch (c) {
 		case 0: /* getopt_long() flag */
-			break;
-		case 'a':
-			errno = 0;
-			async = strtol(optarg, NULL, 0);
-			if (errno)
-				errno_exit(optarg);
 			break;
 		case 'c':
 			errno = 0;
@@ -1573,33 +1512,7 @@ static int option(int argc, char **argv)
 
 		case 'F':
 			errno = 0;
-			setDSPFPS( g_curFPS = strtol(optarg, NULL, 0) );
-			if (errno)
-				errno_exit(optarg);
-			break;
-		case 'k':
-			errno = 0;
-			setChannelMASK( strtoul(optarg, NULL, 0) );
-			if (errno)
-				errno_exit(optarg);
-			break;
-
-		case 'm':
-			errno = 0;
-			min_win = strtol(optarg, NULL, 0);
-			if (errno)
-				errno_exit(optarg);
-			break;
-
-		case 'M':
-			errno = 0;
-			max_win = strtol(optarg, NULL, 0);
-			if (errno)
-				errno_exit(optarg);
-			break;
-		case 's':
-			errno = 0;
-			dsp_step = strtol(optarg, NULL, 0);
+			setDSPFPS(strtol(optarg, NULL, 0));
 			if (errno)
 				errno_exit(optarg);
 			break;
@@ -1627,7 +1540,7 @@ static int option(int argc, char **argv)
 		case 'R':
 			errno = 0;
 			setRADICAL(strtol(optarg, NULL, 0));
-			pr_debug(DSP_DEBUG, "DSP RAIDCAL [%d].\n",getRADICAL());
+			printf("DSP RAIDCAL [%d].\n",getRADICAL());
 			if (errno)
 				errno_exit(optarg);
 			break;
@@ -1663,28 +1576,18 @@ int main(int argc, char **argv)
 	}
 	//start_logging("mylog.txt");
 	open_device();
-
-	pr_debug(DSP_DEBUG, "dsp_step=%d, min_win=%d, max_win=%d!!!\n",
-		dsp_step, min_win, max_win);
-
-	//10fps, step=1, minthr=8s, maxthr=60, 3 channels, synchornous
-	if(dsp_init(g_curFPS, dsp_step, min_win, max_win, 3, async)){
-		pr_debug(DSP_DEBUG, "DSP init failed!!!\n");
-		exit(EXIT_FAILURE);
-	}
 	init_device();
-	//setChannelMASK(G_CHANNEL_MASK);//only green is used!
 
 	cvNamedWindow(windowname,CV_WINDOW_AUTOSIZE);
-	startCapturing();
+
+	startCapturing(v4l2_io);
 	captureVideo();
-	stopCapturing();
+	stopCapturing(v4l2_io);
 
 	cvDestroyWindow(windowname);
 
-	uninit_device();
+	uninit_device(v4l2_io);
 	close_device();
-	dsp_deinit();//!!! waiting for dsp thread to quit!!!
 
 	return 0;
 }

@@ -86,13 +86,13 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DADD_ -DHAVE_LAPACK_CONFIG_H  -DLAPACK_COMP
 endif(ANDROID_NDK)
 
 # --------------------------------------------------
-set(V4L2_LIB_DIR $ENV{V4L2_LIB_DIR})
+#set(V4L2_LIB_DIR $ENV{V4L2_LIB_DIR})
 find_path(V4L2_INC capture-v4l2.h
 			HINTS ${V4L2_LIB_DIR} )
 message("INC:${V4L2_INC}" )
 include_directories("${V4L2_INC}")
 
-#finding libv4l2.a
+#finding libv4l2-x86_64.a
 if(ANDROID_NDK)
 	find_library (V4L2-LIB
 		NAMES v4l2-arm
@@ -101,8 +101,8 @@ if(ANDROID_NDK)
 		NO_DEFAULT_PATH)
 else(ANDROID_NDK)
 	find_library (V4L2-LIB
-		NAMES v4l2-x86
-		PATHS ${V4L2_LIB_DIR}/build_x86/lib
+		NAMES v4l2-${TARGET_ARCH}
+		PATHS ${V4L2_LIB_OUT}/lib
 		PATH_SUFFIXES lib
 		NO_DEFAULT_PATH)
 endif(ANDROID_NDK)
@@ -125,50 +125,53 @@ endif()
 
 message("*** OpenCV_LIBS:${OpenCV_LIBS}")
 message("*** OpenCV_LIBRARIES:${OpenCV_LIBRARIES}")
-
+# --------------------------------------------------
 #openMP to avoid link error : omp_xxx error!
 # undefined reference to `GOMP_loop_dynamic_start
-find_package(OpenMP)
-if(OPENMP_FOUND)
-	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
-	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
-endif()
-
+if( NOT OPENMP_FOUND)
+	find_package(OpenMP)
+	if(OPENMP_FOUND)
+		set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
+		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+	endif()
+endif( NOT OPENMP_FOUND)
 # --------------------------------------------------
 # Make a target to generate the documentation.  If Doxygen isn't installed, then
 # I guess this option will just be unavailable.
-find_package(Doxygen)
+if (NOT DOXYGEN_FOUND)
+	find_package(Doxygen)
 
-if(ANDROID_NDK)
-find_host_package(Doxygen)
-endif(ANDROID_NDK)
+	if(ANDROID_NDK)
+	find_host_package(Doxygen)
+	endif(ANDROID_NDK)
 
-if (DOXYGEN_FOUND)
-  # Preprocess the Doxyfile.  This is done before 'make doc'.
-  add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/Doxyfile
-      PRE_BUILD
-      COMMAND ${CMAKE_COMMAND} -D DESTDIR="${CMAKE_BINARY_DIR}" -P
-          "${CMAKE_CURRENT_SOURCE_DIR}/CMake/GenerateDoxyfile.cmake"
-      WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-      COMMENT "Creating Doxyfile to generate Doxygen documentation"
-  )
+	if (DOXYGEN_FOUND)
+	# Preprocess the Doxyfile.  This is done before 'make doc'.
+	add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/Doxyfile
+		PRE_BUILD
+		COMMAND ${CMAKE_COMMAND} -D DESTDIR="${CMAKE_BINARY_DIR}" -P
+			"${CMAKE_CURRENT_SOURCE_DIR}/CMake/GenerateDoxyfile.cmake"
+		WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+		COMMENT "Creating Doxyfile to generate Doxygen documentation"
+	)
 
-  # Generate documentation.
-  add_custom_target(doc
-      COMMAND "${DOXYGEN_EXECUTABLE}" "${CMAKE_BINARY_DIR}/Doxyfile"
-      DEPENDS "${CMAKE_BINARY_DIR}/Doxyfile"
-      WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
-      COMMENT "Generating API documentation with Doxygen"
-  )
+	# Generate documentation.
+	add_custom_target(doc
+		COMMAND "${DOXYGEN_EXECUTABLE}" "${CMAKE_BINARY_DIR}/Doxyfile"
+		DEPENDS "${CMAKE_BINARY_DIR}/Doxyfile"
+		WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+		COMMENT "Generating API documentation with Doxygen"
+	)
 
-  install(DIRECTORY ${CMAKE_BINARY_DIR}/doc/html
-      DESTINATION share/doc/mlpack
-      COMPONENT doc
-      OPTIONAL
-  )
-endif (DOXYGEN_FOUND)
-
+	install(DIRECTORY ${CMAKE_BINARY_DIR}/doc/html
+		DESTINATION share/doc/mlpack
+		COMPONENT doc
+		OPTIONAL
+	)
+	endif (DOXYGEN_FOUND)
+endif (NOT DOXYGEN_FOUND)
 # --------------------------------------------------
+if(ANDROID_NDK)
 find_package (Threads REQUIRED)
 #message("CMAKE_THREAD_LIBS_INIT : ""${CMAKE_THREAD_LIBS_INIT}")
 #message("Threads_INCLUDES  :" ${Threads_INCLUDES})
@@ -176,7 +179,7 @@ find_package (Threads REQUIRED)
 #message("Threads_LIBS :" ${Threads_LIBS})
 #if (Threads_FOUND)
 #endif (Threads_FOUND)
-
+endif(ANDROID_NDK)
 # --------------------------------------------------
 # Testing
 
@@ -305,48 +308,57 @@ endif(ATLAS_SRC)
 message("BLASLIBS=${BLASLIBS}")
 # --------------------------------------------------
 #find ffts
-message("FFTS_DIR=${FFTS_DIR}" )
+message("FFTS_DIR=${FFTS_DIR}")
+if("${FFTS_DIR}" STREQUAL "")
+	set(FFTS_DIR "${DSP_SOURCE_DIR}/ffts")
+	message("set FFTS_DIR=${FFTS_DIR}")
+endif()
 
 find_path(FFTS_INC ffts.h
 			HINTS ${FFTS_DIR}/include )
-message("**FFTS_INC=${FFTS_INC}" )
+message("FFTS_INC=${FFTS_INC}" )
 if(FFTS_INC)
 	include_directories("${FFTS_INC}")
 endif(FFTS_INC)
 
-message("FFTS_LIB_DIR=${FFTS_LIB_DIR} ")
+message("FFTS_OUT=${FFTS_OUT} ")
 message("**FFTS_LIB_NAME=${FFTS_LIB_NAME}")
-message("**FFTS_LIB_DIR=${FFTS_LIB_DIR}")
+
+#libffts-x86_64.a
 UNSET(FFTSLIB CACHE)
 find_library (FFTSLIB
-			NAMES ${FFTS_LIB_NAME}
-			PATHS ${FFTS_LIB_DIR}
+			NAMES ffts-${TARGET_ARCH}
+			PATHS ${FFTS_OUT}
 			PATH_SUFFIXES lib
 			NO_DEFAULT_PATH)
 message("**FFTSLIB=${FFTSLIB} ")
 if(FFTSLIB)
 	#link static lib
-#	message("FFTSLIB=${FFTSLIB}")
+	message("FFTSLIB=${FFTSLIB}")
 endif(FFTSLIB)
-
 # --------------------------------------------------
-#find libdsp
-message("DSPLIB_SRC=${DSPLIB_SRC}" )
+#find dsp/lib
+#libbcv-dsp_x86_64.so
+#libbcv-dsp_static_x86_64.a
 
-find_path(DSP_INC dsp-lib.h
-			HINTS ${DSPLIB_SRC} )
-message("**DSP_INC=${DSP_INC}" )
-if(DSP_INC)
-	include_directories("${DSP_INC}")
-endif(DSP_INC)
+message("DSPLIB_DIR=${DSPLIB_DIR}" )
 
-message("**DSPLIB_BIN=${DSPLIB_BIN} ")
+find_path(DSPLIB_INC dsp-lib.h
+			HINTS ${DSPLIB_DIR} )
+message("DSPLIB_INC=${DSPLIB_INC}" )
+if(DSPLIB_INC)
+	include_directories("${DSPLIB_INC}")
+endif(DSPLIB_INC)
+
 message("**DSPLIB_NAME=${DSPLIB_NAME}")
+message("**TARGET_ARCH=${TARGET_ARCH}")
+message("***DSPLIB_OUT=${DSPLIB_OUT}")
 
-#libbcv-dsp_x86
+#libbcv-dsp_x86_64.so
+#libbcv-dsp_static_x86_64.a
 find_library (DSPLIB
-			NAMES ${DSPLIB_NAME}
-			PATHS ${DSPLIB_BIN}
+			NAMES ${DSPLIB_NAME}-${TARGET_ARCH}
+			PATHS ${DSPLIB_OUT}/lib
 			PATH_SUFFIXES lib
 			NO_DEFAULT_PATH)
 message("**DSPLIB=${DSPLIB} ")
@@ -354,6 +366,28 @@ if(DSPLIB)
 	#link static lib
 	message("DSPLIB=${DSPLIB}")
 endif(DSPLIB)
+# --------------------------------------------------
+#libpico-x86_64.a
+message("PICO_DIR=${PICO_DIR}" )
+find_path(PICO_INC picornt.h
+			HINTS ${PICO_DIR}/rnt )
+message("**PICO_INC=${PICO_INC}" )
+if(PICO_INC)
+	include_directories("${PICO_INC}")
+endif(PICO_INC)
+
+message("**PICO_OUT=${PICO_OUT} ")
+#libpico-x86_64.a
+find_library (PICOLIB
+			NAMES pico-${TARGET_ARCH}
+			PATHS ${PICO_OUT}/rnt/sample/lib
+			PATH_SUFFIXES lib
+			NO_DEFAULT_PATH)
+message("**PICOLIB=${PICOLIB} ")
+if(PICOLIB)
+	#link static lib
+	message("PICOLIB=${PICOLIB}")
+endif(PICOLIB)
 
 # --------------------------------------------------
 # switch searching path to NDK
@@ -398,6 +432,11 @@ else(1)
 		)
 	endif("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
 endif(1)
+
+#add_dependencies(v4l2-play
+#		PICOLIB
+#	)
+
 # --------------------------------------------------
 add_executable(pulse-v4l2
 	pulse-v4l2.c
@@ -410,11 +449,13 @@ if(1)
 	if("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
 		target_link_libraries(pulse-v4l2
 			${DSPLIB}
+			${PICOLIB}
 			${OpenCV_LIBS}
 		)
 	else("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
 		target_link_libraries(pulse-v4l2
 			${DSPLIB}
+			${PICOLIB}
 			${OpenCV_LIBS}
 		)
 	endif("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
@@ -423,13 +464,19 @@ else(1)
 		target_link_libraries(pulse-v4l2
 			${DSPLIB}.d
 			${DSP_DEP_STATICS}
+			${PICOLIB}
 			${OpenCV_LIBS}
 		)
 	else("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
 		target_link_libraries(pulse-v4l2
 			${DSPLIB}
 			${DSP_DEP_STATICS}
+			${PICOLIB}
 			${OpenCV_LIBS}
 		)
 	endif("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
 endif(1)
+
+add_dependencies(pulse-v4l2
+		PICOLIB
+	)
