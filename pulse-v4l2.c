@@ -730,7 +730,6 @@ static CvScalar processFrame(const void *p, int size)
 	uint64_t ut2;
 	struct timeval pt2;
 	float m_roi[MAX_CHANNELS]={0.0};
-	//CvRect sroi;
 	RECT roi;
 	//pr_debug(DSP_INFO,"%s: size=0x%x\n", __func__, size);
 	if(V4L2_PIX_FMT_MJPEG == v4l2_pix_fmt){
@@ -786,12 +785,12 @@ static CvScalar processFrame(const void *p, int size)
 			roi_WIDTH = (win_width>>2);	//160
 			roi_HEIGHT = (win_height/3);	//160
 			roi_Y_OFFSET =	(70);//(DEFAULT_HEIGHT/win_height);
+			roi.x = (framecopy->width - roi_WIDTH)/2 - 1;
+			roi.y = (framecopy->height - roi_HEIGHT)/2 - 1+ roi_Y_OFFSET;
+			roi.width = roi_WIDTH;
+			roi.height = roi_HEIGHT;
 		}
 		MATRIX img={win_height, win_width, framecopy->imageData };
-		roi.x = (framecopy->width - roi_WIDTH)/2 - 1;
-		roi.y = (framecopy->height - roi_HEIGHT)/2 - 1+ roi_Y_OFFSET;
-		roi.width = roi_WIDTH;
-		roi.height = roi_HEIGHT ;
 
 		roiMean(MAX_CHANNELS, &img, roi, m_roi);
 		//pr_debug(DSP_INFO,"m_roi(%.4f,%.4f,%.4f)\n", m_roi[0],m_roi[1],m_roi[2]);
@@ -815,15 +814,10 @@ static CvScalar processFrame(const void *p, int size)
 	cvPrintf(framecopy, tempstr, cvPoint(200,40), cvFont(2.0,2.5), textColor);
 
 	//draw the bouding ROI on the frame
-#if 0
-	cvRectangle(framecopy, cvPoint(sroi.x, sroi.y),
-				cvPoint(sroi.x+sroi.width, sroi.y+sroi.height),
-				textColor, ROI_BORDERW,8, 0);
-#else
 	cvRectangle(framecopy, cvPoint(roi.x, roi.y),
 				cvPoint(roi.x+roi.width, roi.y+roi.height),
 				textColor, ROI_BORDERW,8, 0);
-#endif
+
 	gettimeofday(&pt2, NULL);
 	ut2 = (pt2.tv_sec * 1000000) + pt2.tv_usec;
 	if( ut1 && (ut2 > ut1)){
