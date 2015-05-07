@@ -660,7 +660,11 @@ void cvPrintf(IplImage* img, char *text, CvPoint TextPosition, CvFont Font1,
   //cvPutText(img, text, TextPosition, &Font1, CV_RGB(0,255,0));
 }
 
-int spectraAnalysis(IplImage* framecopy, CvScalar roi_rgb, float *pr, float *rr)
+/*
+ * input : roi mean of r,g, b channels
+ * return the green channel's BPM
+ */
+int spectraAnalysis(IplImage* framecopy, CvScalar roi_rgb, float *pr)
 {
 	int n=0;
 
@@ -681,8 +685,8 @@ int spectraAnalysis(IplImage* framecopy, CvScalar roi_rgb, float *pr, float *rr)
 		sprintf(tempstr,"[b:%5.1f/%6.1f][g:%5.1f/%6.1f][r:%5.1f/%6.1f]",
 				ppg[0],ppg[1],ppg[2],ppg[3],ppg[4],ppg[5]);
 		cvPrintf(framecopy, tempstr, cvPoint(200,60), cvFont(1.0,1.0), CV_RGB(0,255,0));
-		n=3;
-		*pr = ppg[2];
+		n=MAX_CHANNELS;
+		*pr = ppg[2];//return G's bpm
 	}
   return n;
 }
@@ -800,7 +804,7 @@ static CvScalar processFrame(const void *p, int size)
 	char tempstr[40];
 	float pr=0.0;
 	static float valid_pr=0.0;
-	int n= spectraAnalysis(framecopy, m_rgb, &pr, NULL);
+	int n= spectraAnalysis(framecopy, m_rgb, &pr);
 	static CvScalar textColor={100, 100, 100};//B,G,R
 	if(n>0){
 	  //green color
