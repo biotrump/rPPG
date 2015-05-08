@@ -667,13 +667,13 @@ void cvPrintf(IplImage* img, char *text, CvPoint TextPosition, CvFont Font1,
 int spectraAnalysis(IplImage* framecopy, CvScalar roi_rgb, float *pr)
 {
 	int n=0;
-
-	float rgb[3], ppg[MAX_CHANNELS*2];
-	int steps=getStepping()*getDSPFPS();
 	char tempstr[80];
+	float rgb[3], ppg[MAX_CHANNELS*2];
+/*
+	int steps=getStepping()*getDSPFPS();
 	sprintf(tempstr,"[%d/%d]", getDSPCQ_Size(), getNextStepping());
 	cvPrintf(framecopy, tempstr, cvPoint(200,90), cvFont(2.0,1.0), CV_RGB(0,255,0));
-
+*/
 	rgb[0]=roi_rgb.val[0];
 	rgb[1]=roi_rgb.val[1];
 	rgb[2]=roi_rgb.val[2];
@@ -735,6 +735,7 @@ static CvScalar processFrame(const void *p, int size)
 	struct timeval pt2;
 	float m_roi[MAX_CHANNELS]={0.0};
 	RECT roi;
+	int nd=0;
 	//pr_debug(DSP_INFO,"%s: size=0x%x\n", __func__, size);
 	if(V4L2_PIX_FMT_MJPEG == v4l2_pix_fmt){
 		IplImage* frame;
@@ -761,7 +762,6 @@ static CvScalar processFrame(const void *p, int size)
 		//		printf("size too small\n");
 		//		return ;
 		//	}
-		int nd=0;
 		float rs[4],cs[4],ss[4];
 		framecopy = cvCreateImage(cvSize(win_width, win_height), IPL_DEPTH_8U, 3);
 		Ycopy = cvCreateImage(cvSize(win_width, win_height), IPL_DEPTH_8U, 1);
@@ -801,10 +801,11 @@ static CvScalar processFrame(const void *p, int size)
 	}
 
 	CvScalar m_rgb=cvScalar(m_roi[0],m_roi[1],m_roi[2], 0.0);
-	char tempstr[40];
+	char tempstr[80];
 	float pr=0.0;
 	static float valid_pr=0.0;
-	int n= spectraAnalysis(framecopy, m_rgb, &pr);
+	int n=-1;
+	if(nd) n=spectraAnalysis(framecopy, m_rgb, &pr);
 	static CvScalar textColor={100, 100, 100};//B,G,R
 	if(n>0){
 	  //green color
@@ -814,6 +815,11 @@ static CvScalar processFrame(const void *p, int size)
 	  //red color, release the cq and reload again!
 	  textColor=CV_RGB(255,0,0);
 	}
+
+	int steps=getStepping()*getDSPFPS();
+	sprintf(tempstr,"[%d/%d]", getDSPCQ_Size(), getNextStepping());
+	cvPrintf(framecopy, tempstr, cvPoint(200,90), cvFont(2.0,1.0), CV_RGB(0,255,0));
+
 	sprintf(tempstr,"%.1fbpm (%.2fHz)", valid_pr, valid_pr/60.0f);
 	cvPrintf(framecopy, tempstr, cvPoint(200,40), cvFont(2.0,2.5), textColor);
 
