@@ -1128,7 +1128,7 @@ static void init_mmap(void)
 		pr_debug(DSP_INFO,"\tbuf.memory: %d\n", buf.memory);
 		pr_debug(DSP_INFO,"\tbuf.m.offset: %d\n", buf.m.offset);
 		pr_debug(DSP_INFO,"\tbuf.length: %d\n", buf.length);
-		pr_debug(DSP_INFO,"\tbuf.input: %d\n", buf.input);
+//		pr_debug(DSP_INFO,"\tbuf.input: %d\n", buf.input);
 		pr_debug(DSP_INFO,"\n");
 
 		buffers[n_buffers].length = buf.length;
