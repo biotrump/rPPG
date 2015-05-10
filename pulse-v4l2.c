@@ -727,7 +727,7 @@ static void roi_mean(IplImage *img, CvRect roi, float *m)
 /*
 p is a YUYV 422 format, so 640x480x16bits = 61440 bytes
 */
-static CvScalar processFrame(const void *p, int size)
+static CvScalar processFrame_cv(const void *p, int size)
 {
 	IplImage* framecopy=NULL, *Ycopy=NULL;
 	static uint64_t ut1;
@@ -772,7 +772,7 @@ static CvScalar processFrame(const void *p, int size)
 			extractY(win_width, win_height, (unsigned char *)p, Ycopy->imageData);
 		}
 		//process_image(Ycopy, 1, 1);
-		nd=pico_facedetection(Ycopy, 1, 1, 4, rs, cs, ss);
+		nd=pico_facedetection_cv(Ycopy, 1, 1, 4, rs, cs, ss);
 		printf("*nd=%d\n",nd);
 		//setup a rectangle ROI
 		if(nd){//sqrt(2)=1.414
@@ -876,7 +876,7 @@ static int readFrame(void)
 			}
 		}
 
-		m_rgb=processFrame(buffers[0].start, buffers[0].length);
+		m_rgb=processFrame_cv(buffers[0].start, buffers[0].length);
 		break;
 
 	case IO_METHOD_MMAP://!!!default method!!!
@@ -902,7 +902,7 @@ static int readFrame(void)
 
 		assert(buf.index < n_buffers);
 
-		m_rgb=processFrame(buffers[buf.index].start, buf.bytesused);
+		m_rgb=processFrame_cv(buffers[buf.index].start, buf.bytesused);
 
 		if (-1 == xioctl(fd, VIDIOC_QBUF, &buf))
 			errno_exit("VIDIOC_QBUF");
@@ -936,7 +936,7 @@ static int readFrame(void)
 
 		assert(i < n_buffers);
 
-		m_rgb = processFrame((void *)buf.m.userptr, buf.bytesused);
+		m_rgb = processFrame_cv((void *)buf.m.userptr, buf.bytesused);
 
 		if (-1 == xioctl(fd, VIDIOC_QBUF, &buf))
 			errno_exit("VIDIOC_QBUF");
