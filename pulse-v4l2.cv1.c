@@ -661,7 +661,6 @@ void cvPrintf(IplImage* img, char *text, CvPoint TextPosition, CvFont Font1,
   //cvPutText(img, text, TextPosition, &Font1, CV_RGB(0,255,0));
 }
 
-#if 0
 /*
  * input : roi mean of r,g, b channels
  * return the green channel's BPM
@@ -725,16 +724,14 @@ static void roi_mean(IplImage *img, CvRect roi, float *m)
 	pr_debug(DSP_INFO,"-%s:(b,g,r)=%.4f %.4f %.4f\n",__func__,
 			 m[0],m[1],m[2]);
 }
-#endif
 
+#if 1
 /*
  * p is a YUYV 422 format, so 640x480x16bits = 61440 bytes
+ * input :
  * ppg[MAX_CHANNELS*2]; LSB = B:(bpm, mag) G:(bpm, mag) R:(bpm,mag)
- * input : width, height of the frame buffer
- * 		band_min, band_max of the valid human heart beat
- * output: roi[], the detected faces' roi
- * 		nface : the detected faces which is no over than the MAX_FACES
- * return : the valid pulse rate
+ * roi mean of r,g, b channels
+ * return the green channel's BPM
 */
 float processFrame(int sfmt, const void *p, int width, int height,
 	float band_min, float band_max, RECT *roi, int *nface
@@ -837,7 +834,7 @@ static CvScalar processFrame_cv(const void *p, int size)
 	pr = processFrame(v4l2_pix_fmt, p, win_width, win_height,
 					  MIN_HR_BPM, MAX_HR_BPM, &roi, &nface);
 
-#if 1	//openCV debug and show
+#if 1	//openCV debug
 	void *imagedata_Y=malloc(win_width * win_height);
 	extractY(win_width, win_height, (unsigned char *)p, imagedata_Y);
 	IplImage* gray = cvCreateImageHeader(cvSize(win_width, win_height), IPL_DEPTH_8U, 1);
@@ -914,7 +911,131 @@ static CvScalar processFrame_cv(const void *p, int size)
 	CvScalar s={pr};
 	return s;
 }
+#else
+/*
+p is a YUYV 422 format, so 640x480x16bits = 61440 bytes
+*/
+static CvScalar processFrame_cv(const void *p, int size)
+{
+	IplImage* framecopy=NULL, *Ycopy=NULL;
+	static uint64_t ut1;
+	uint64_t ut2;
+	struct timeval pt2;
+	float m_roi[MAX_CHANNELS]={0.0};
+	RECT roi;
+	int nd=0;
+	//pr_debug(DSP_INFO,"%s: size=0x%x\n", __func__, size);
+	if(V4L2_PIX_FMT_MJPEG == v4l2_pix_fmt){
+		IplImage* frame;
+		CvMat cvmat = cvMat(win_height, win_width, CV_8UC3, (void*)p);//MJPEG buffer p
+		frame = cvDecodeImage(&cvmat, 1);//sometimes a corrupted frame is retrieved,
+										//so frame should be checked if it's null.
+		if(frame && !framecopy){
+	//		CvSize s = cvGetSize(frame);
+	//		printf("[%d,%d]\n",s.width, s.height);
+			framecopy = cvCreateImage(cvGetSize(frame), IPL_DEPTH_8U, 3);
+	//		printf("cvCreateImage=%p\n", framecopy);
+		}
+		if(frame){
+			cvCopy(frame, framecopy, 0);
+	//    	cvShowImage(windowname, frame);
+			cvShowImage("framecopy", framecopy);
+		}else{
+			printf("frame NULL, size=%d\n", size);
+		}
+	//	cvReleaseImage(&frame);
+	}else{
+		//V4L2_PIX_FMT_YUYV
+		//	if(size < (win_width*win_height*2)){
+		//		printf("size too small\n");
+		//		return ;
+		//	}
+		float rs[4],cs[4],ss[4];
+		framecopy = cvCreateImage(cvSize(win_width, win_height), IPL_DEPTH_8U, 3);
+		Ycopy = cvCreateImage(cvSize(win_width, win_height), IPL_DEPTH_8U, 1);
+		if(enableInfraRed)
+			infrared_to_rgb888(win_width,win_height, (unsigned char *)p, framecopy->imageData);
+		else{
+			yuyv_to_rgb24(win_width, win_height, (unsigned char *)p, framecopy->imageData);
+			extractY(win_width, win_height, (unsigned char *)p, Ycopy->imageData);
+		}
+		//process_image(Ycopy, 1, 1);
+		nd=pico_facedetection_cv(Ycopy, 1, 1, 4, rs, cs, ss);
+		printf("*nd=%d\n",nd);
+		//setup a rectangle ROI
+		if(nd){//sqrt(2)=1.414
+			roi_Y_OFFSET =	ss[0]/10;
+			roi_WIDTH = ss[0]/1.414f;
+			roi_HEIGHT = ss[0]/1.414f + roi_Y_OFFSET;
 
+			//the ROI in the image
+			roi.x = cs[0] - roi_WIDTH/2;
+			roi.y = rs[0] - roi_HEIGHT/2 + roi_Y_OFFSET;
+			roi.width = roi_WIDTH;
+			roi.height = roi_HEIGHT ;
+		}else{
+			roi_WIDTH = (win_width>>2);	//160
+			roi_HEIGHT = (win_height/3);	//160
+			roi_Y_OFFSET =	(70);//(DEFAULT_HEIGHT/win_height);
+			roi.x = (framecopy->width - roi_WIDTH)/2 - 1;
+			roi.y = (framecopy->height - roi_HEIGHT)/2 - 1+ roi_Y_OFFSET;
+			roi.width = roi_WIDTH;
+			roi.height = roi_HEIGHT;
+		}
+		MATRIX img={win_height, win_width, framecopy->imageData };
+
+		roiMean(MAX_CHANNELS, &img, roi, m_roi);
+		//pr_debug(DSP_INFO,"m_roi(%.4f,%.4f,%.4f)\n", m_roi[0],m_roi[1],m_roi[2]);
+	}
+
+	CvScalar m_rgb=cvScalar(m_roi[0],m_roi[1],m_roi[2], 0.0);
+	char tempstr[80];
+	float pr=0.0;
+	static float valid_pr=0.0;
+	int n=-1;
+	if(nd) n=spectraAnalysis(framecopy, m_rgb, &pr);
+	static CvScalar textColor={100, 100, 100};//B,G,R
+	if(n>0){
+	  //green color
+	  textColor=CV_RGB(0,255,0);
+	  valid_pr=pr;
+	}else if(n < 0) {
+	  //red color, release the cq and reload again!
+	  textColor=CV_RGB(255,0,0);
+	}
+
+	int steps=getStepping()*getDSPFPS();
+	sprintf(tempstr,"[%d/%d]", getDSPCQ_Size(), getNextStepping());
+	cvPrintf(framecopy, tempstr, cvPoint(200,90), cvFont(2.0,1.0), CV_RGB(0,255,0));
+
+	sprintf(tempstr,"%.1fbpm (%.2fHz)", valid_pr, valid_pr/60.0f);
+	cvPrintf(framecopy, tempstr, cvPoint(200,40), cvFont(2.0,2.5), textColor);
+
+	//draw the bouding ROI on the frame
+	cvRectangle(framecopy, cvPoint(roi.x, roi.y),
+				cvPoint(roi.x+roi.width, roi.y+roi.height),
+				textColor, ROI_BORDERW,8, 0);
+
+	gettimeofday(&pt2, NULL);
+	ut2 = (pt2.tv_sec * 1000000) + pt2.tv_usec;
+	if( ut1 && (ut2 > ut1)){
+	  pr_debug(DSP_INFO,"fps=%.0f\n", 1000000.0/(ut2-ut1));
+	  sprintf(tempstr,"fps:%.1f", 1000000.0/(ut2-ut1));
+	  cvPrintf(framecopy, tempstr, cvPoint(20,50), cvFont(1.5,1.0), CV_RGB(0,0,255));
+	}
+	ut1=ut2;
+
+	sprintf(tempstr,"press 'q' to quit...");
+	cvPrintf(framecopy, tempstr, cvPoint(10,460),cvFont(1.5,1.0), CV_RGB(255,255, 255));
+
+	cvShowImage(windowname, framecopy);
+
+	if(framecopy)
+	  cvReleaseImage(&framecopy);
+
+	return m_rgb;
+}
+#endif
 
 /*
  * IO_METHOD_MMAP://!!!default method!!!

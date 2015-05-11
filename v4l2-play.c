@@ -704,7 +704,7 @@ int spectraAnalysis(IplImage* framecopy, CvScalar rgb, float *pr, float *rr)
 /*
 p is a YUYV 422 format, so 640x480x16bits = 61440 bytes
 */
-static void processFrame(const void *p, int size)
+static void processFrame_v4l2(const void *p, int size)
 {
 	IplImage* framecopy=NULL;
 	static uint64_t ut1;
@@ -807,7 +807,7 @@ static int readFrame(void)
 			}
 		}
 
-		processFrame(buffers[0].start, buffers[0].length);
+		processFrame_v4l2(buffers[0].start, buffers[0].length);
 		break;
 
 	case IO_METHOD_MMAP://!!!default method!!!
@@ -833,7 +833,7 @@ static int readFrame(void)
 
 		assert(buf.index < n_buffers);
 
-		processFrame(buffers[buf.index].start, buf.bytesused);
+		processFrame_v4l2(buffers[buf.index].start, buf.bytesused);
 
 		if (-1 == xioctl(fd, VIDIOC_QBUF, &buf))
 			errno_exit("VIDIOC_QBUF");
@@ -867,7 +867,7 @@ static int readFrame(void)
 
 		assert(i < n_buffers);
 
-		processFrame((void *)buf.m.userptr, buf.bytesused);
+		processFrame_v4l2((void *)buf.m.userptr, buf.bytesused);
 
 		if (-1 == xioctl(fd, VIDIOC_QBUF, &buf))
 			errno_exit("VIDIOC_QBUF");
