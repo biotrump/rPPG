@@ -1740,7 +1740,7 @@ int main(int argc, char **argv)
 		dsp_step, min_win, max_win);
 
 	//10fps, step=1, minthr=8s, maxthr=60, 3 channels, synchornous
-	if(dsp_init(g_curFPS, dsp_step, min_win, max_win, 3, async)){
+	if(dsp_init(g_curFPS, dsp_step, min_win, max_win, 3, NULL, async)){
 		pr_debug(DSP_DEBUG, "DSP init failed!!!\n");
 		exit(EXIT_FAILURE);
 	}
